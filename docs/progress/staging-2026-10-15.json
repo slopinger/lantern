@@ -1,0 +1,9 @@
+{
+  "cached_startup": true,
+  "renewed_without_restart": true,
+  "old_serial": "serial=2CBB3BF10797436F76E9EB79FD878B6C8620",
+  "new_serial": "serial=2CD134321B1987753A5E7B77D5771E4244BF",
+  "verified_response": "lantern: own HTTP + TLS + ACME, staging certificate",
+  "temporary_dns_and_caddy_route_removed": true,
+  "authority": "https://acme-staging-v02.api.letsencrypt.org/directory"
+}

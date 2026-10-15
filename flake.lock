@@ -1,0 +1,71 @@
+{
+  "nodes": {
+    "http": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1792083885,
+        "narHash": "sha256-I0u/SyYMySfPHIqqog2W+Ljx73PkqUto50VfWOh/YzA=",
+        "ref": "main",
+        "rev": "f3562314b5d36d0e20ce3d57a8b4d7d36d661667",
+        "revCount": 1,
+        "type": "git",
+        "url": "https://git.freifick.net/slop/lantern-http.git"
+      },
+      "original": {
+        "ref": "main",
+        "type": "git",
+        "url": "https://git.freifick.net/slop/lantern-http.git"
+      }
+    },
+    "nixpkgs": {
+      "locked": {
+        "lastModified": 1791956154,
+        "narHash": "sha256-jBYGPi4udQ9uo4KQp9m2J0546nJVQitG15gvZSaVVAs=",
+        "owner": "NixOS",
+        "repo": "nixpkgs",
+        "rev": "55bfb4d7437bd4e09ab7cba58a43bd68eb310044",
+        "type": "github"
+      },
+      "original": {
+        "owner": "NixOS",
+        "ref": "nixos-unstable",
+        "repo": "nixpkgs",
+        "type": "github"
+      }
+    },
+    "root": {
+      "inputs": {
+        "http": "http",
+        "nixpkgs": "nixpkgs",
+        "tls": "tls"
+      }
+    },
+    "tls": {
+      "inputs": {
+        "nixpkgs": [
+          "nixpkgs"
+        ]
+      },
+      "locked": {
+        "lastModified": 1792085197,
+        "narHash": "sha256-ddhODEXicdYfqBL5j4u+ZKC1YwN/+bD0RYBGbHl6RY8=",
+        "ref": "main",
+        "rev": "0d0ebf4c57f5c4f293005b9a0e24bc609dee556c",
+        "revCount": 1,
+        "type": "git",
+        "url": "https://git.freifick.net/slop/lantern-tls.git"
+      },
+      "original": {
+        "ref": "main",
+        "type": "git",
+        "url": "https://git.freifick.net/slop/lantern-tls.git"
+      }
+    }
+  },
+  "root": "root",
+  "version": 7
+}

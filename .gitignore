@@ -1,0 +1,11 @@
+result*
+.ghc
+.compiler
+.build/
+dist-newstyle/
+*.hi
+*.o
+.lantern/
+
+__pycache__/
+*.py[cod]

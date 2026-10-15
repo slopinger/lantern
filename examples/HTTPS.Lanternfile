@@ -1,0 +1,8 @@
+# Public DNS must point here, and HTTP port 80 must reach this process.
+listen [::]:443
+auto_https you@example.com /var/lib/lantern
+# Start with staging; its certificates are deliberately untrusted by browsers.
+acme_ca https://acme-staging-v02.api.letsencrypt.org/directory
+site example.com {
+    root ./public
+}

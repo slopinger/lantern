@@ -1,0 +1,50 @@
+{-# LANGUAGE OverloadedStrings #-}
+module Main (main) where
+import Control.Monad (unless,forM_)
+import qualified Data.ByteString as B
+import qualified Data.Text as T
+import qualified Data.Map.Strict as M
+import Lantern.Config
+import qualified Lantern.JSON as J
+import Lantern.ACME (retryDelay)
+import System.Exit (exitFailure)
+import Test.QuickCheck
+
+check :: String -> Bool -> IO ()
+check name ok=unless ok (fail name)
+main :: IO ()
+main=do
+  cfg <- either fail pure (parseConfig "test" "listen 127.0.0.1:8080 site localhost { respond \"hello world\" }")
+  check "listen parsed" (listen cfg==Endpoint "127.0.0.1" 8080)
+  check "body default" (bodyLimit cfg==1048576)
+  forM_ ["", "unknown x", "site localhost { nonsense x }", "site localhost { respond a root b }",
+      "site localhost { }", "site localhost { respond x } site localhost { respond y }",
+      "site LOCALHOST { respond x } site localhost { respond y }",
+      "site localhost { header Content-Length 5 respond x }", "listen 0.0.0.0:99999 site a { respond x }",
+      "site a { reverse_proxy https://upstream:443 }", "site a { reverse_proxy http://user@upstream:80 }",
+      "site bad/host { respond x }", "site a { header X-A a header X-A b respond c }",
+      "max_connections 99999 site a { respond x }", "body_limit 999999999 site a { respond x }",
+      "site localhost { respond a } tls a b auto_https a@b c", "auto_https a@b c site localhost { respond x }"] $ \bad ->
+    check "invalid configuration accepted" (case parseConfig "test" bad of Left _ -> True;Right _ -> False)
+  forM_ ["{\"a\":1,\"a\":2}", "[01]", "[1.]", "{\"a\":true,}", "\"\\ud800\"", "\"\\udc00\"", "[NaN]",
+      "\"a\n\"", "[true] trailing", B.replicate 33 91<>B.replicate 33 93] $ \bad ->
+    check "invalid JSON accepted" (case J.decode bad of Left _ -> True;Right _ -> False)
+  check "surrogate pair" (J.decode "\"\\ud83d\\ude00\""==Right (J.String "😀"))
+  delay<-retryDelay [("retry-after","120")]
+  check "Retry-After delta" (delay==120)
+  past<-retryDelay [("retry-after","Wed, 01 Jan 2020 00:00:00 GMT")]
+  check "Retry-After past" (past==0)
+  result<-quickCheckWithResult stdArgs {maxSuccess=1000,maxSize=50} propJSON
+  unless (isSuccess result) exitFailure
+  putStrLn "configuration, bounded JSON and Retry-After checks passed"
+
+newtype Sample = Sample J.JSON deriving Show
+instance Arbitrary Sample where
+  arbitrary=Sample <$> sized (gen . min 4)
+    where
+      gen n=oneof (leaves++if n<=0 then [] else
+        [J.Array <$> resize 5 (listOf (gen (n-1))),
+         J.Object . M.fromList <$> resize 5 (listOf ((,) <$> (T.pack <$> arbitrary) <*> gen (n-1)))])
+      leaves=[pure J.Null,J.Bool <$> arbitrary,J.String . T.pack <$> arbitrary,pure (J.Number "123.5e-2")]
+propJSON :: Sample -> Bool
+propJSON (Sample value)=J.decode (J.encode value)==Right value
