@@ -133,3 +133,8 @@ instead of creating redirect loops or following links. HEAD redirects are bodyle
 range/conditional headers do not override the ordinary redirect decision. Tests
 cover encoded separators, Unicode, queries, relative assets, search-only directories,
 reused connections, repeated directory descriptor cleanup, and symlink-swap races.
+
+HTTPS certificate key policy requires exact RSA modulus bounds throughout the
+selected path (2048–8192 bits); rounded byte size cannot establish the minimum.
+Only the TLS library's advertised modern certificate algorithms are accepted.
+The proxy regressions cover weak issuer and weak leaf rejection before HTTP.

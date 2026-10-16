@@ -72,3 +72,6 @@
   server build and dev shell, keeping Crypton 2.2.1/ram types consistent. Proxy
   tests include invalid name constraints, critical extensions and issuer EKU,
   requiring 502 without forwarding HTTP. No live deployment is changed.
+- HTTPS proxy tests also offer 1024-bit issuer and 2047-bit leaf RSA keys through
+  an independent test peer; both must return 502 without forwarding HTTP. The TLS
+  dependency checks exact modulus bits and certificate signature algorithms.

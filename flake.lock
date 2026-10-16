@@ -51,11 +51,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1792164086,
-        "narHash": "sha256-rY0PkjJM3uZ6qz7TchlGdujypO2tKTpCXqLRImXjfyg=",
+        "lastModified": 1792164908,
+        "narHash": "sha256-2K2+Pj0g5VBQSJKkv/zBdAJX699GzdkN9kl9Xp5ndt8=",
         "ref": "main",
-        "rev": "08e810fc35c8e66debf528fa5a4dc6af33ad81b1",
-        "revCount": 4,
+        "rev": "b0cfe756fb20a87587c552afe202507baf91c842",
+        "revCount": 5,
         "type": "git",
         "url": "https://git.freifick.net/slop/lantern-tls.git"
       },

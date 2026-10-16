@@ -45,14 +45,14 @@ class Tests(unittest.TestCase):
             root = certificate(root_key, None, None, 'test root', ca=True)
             root_path = directory/'root.pem'
             root_path.write_bytes(root.public_bytes(serialization.Encoding.PEM))
-            for kind in ['rsa', 'ecdsa', 'p256', 'wrong-host', 'unknown-ca', 'expired', 'tls12', 'name-constraint', 'critical-extension', 'issuer-purpose']:
+            for kind in ['rsa', 'ecdsa', 'p256', 'wrong-host', 'unknown-ca', 'expired', 'tls12', 'name-constraint', 'critical-extension', 'issuer-purpose', 'weak-issuer', 'weak-leaf']:
                 with self.subTest(kind=kind):
                     key = (ec.generate_private_key(ec.SECP256R1()) if kind == 'ecdsa' else
-                           rsa.generate_private_key(public_exponent=65537, key_size=2048))
+                           rsa.generate_private_key(public_exponent=65537, key_size=2047 if kind == 'weak-leaf' else 2048))
                     issuer_key, issuer = root_key, root
                     chain = b''
-                    if kind in ['name-constraint', 'critical-extension', 'issuer-purpose']:
-                        issuer_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+                    if kind in ['name-constraint', 'critical-extension', 'issuer-purpose', 'weak-issuer']:
+                        issuer_key = rsa.generate_private_key(public_exponent=65537, key_size=1024 if kind == 'weak-issuer' else 2048)
                         extensions = []
                         if kind == 'name-constraint':
                             extensions = [(x509.NameConstraints([x509.DNSName('allowed.test')], None), True)]
@@ -72,6 +72,7 @@ class Tests(unittest.TestCase):
                         serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
                     backend = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Backend)
                     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
+                    context.set_ciphers('DEFAULT:@SECLEVEL=0')  # intentionally weak server fixtures
                     context.load_cert_chain(cert_path, key_path)
                     context.set_ecdh_curve('prime256v1' if kind == 'p256' else 'X25519')
                     context.set_alpn_protocols(['http/1.1'])
