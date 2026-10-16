@@ -211,3 +211,8 @@ python test/directory_browser.py --binary ./result/bin/lantern --out /tmp/lanter
 It starts a disposable loopback site, verifies plain/encoded-slash redirects and
 relative CSS/JS/JSON in isolated browser profiles, captures the fixture page, then
 stops the server. This does not deploy or browse production services.
+
+The Nix build uses the TLS flake's shared primitive package set (Crypton 2.2.1,
+certificate verifier 1.10.0). HTTPS peers must satisfy its bounded certificate
+policy; unsupported name-constraint forms are rejected. See
+[security limits](docs/security.md) and the TLS library's own profile.

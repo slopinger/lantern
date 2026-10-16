@@ -9,7 +9,7 @@ build-type: Simple
 library
   hs-source-dirs: src
   exposed-modules: Lantern.Config, Lantern.Transport, Lantern.Files, Lantern.Server, Lantern.Client, Lantern.ACME, Lantern.JSON
-  build-depends: base >=4.18 && <5, bytestring, containers, text, network, lantern-http, lantern-tls, async, parsec, directory, filepath, unix, time, mime-types, crypton
+  build-depends: base >=4.18 && <5, bytestring, containers, text, network, lantern-http, lantern-tls, async, parsec, directory, filepath, unix, time, mime-types, crypton >=2.2.1 && <2.3
   c-sources: cbits/confine.c
   ghc-options: -Wall -Wcompat -O2
   default-language: Haskell2010

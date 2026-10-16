@@ -13,14 +13,14 @@ import unittest
 from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import ec, rsa
-from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID
+from cryptography.x509.oid import NameOID, ExtendedKeyUsageOID, ObjectIdentifier
 from http_test import Running, Backend, free_port
 
 
-def certificate(key, issuer_key, issuer, hostname, ca=False, expired=False):
+def certificate(key, issuer_key, issuer, hostname, ca=False, expired=False, extensions=(), client_only=False):
     now = datetime.datetime.now(datetime.timezone.utc)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, hostname)])
-    return (x509.CertificateBuilder().subject_name(name)
+    builder = (x509.CertificateBuilder().subject_name(name)
             .issuer_name(issuer.subject if issuer else name).public_key(key.public_key())
             .serial_number(x509.random_serial_number())
             .not_valid_before(now-datetime.timedelta(days=2))
@@ -30,8 +30,11 @@ def certificate(key, issuer_key, issuer, hostname, ca=False, expired=False):
             .add_extension(x509.KeyUsage(digital_signature=True, content_commitment=False,
                            key_encipherment=False, data_encipherment=False, key_agreement=False,
                            key_cert_sign=ca, crl_sign=ca, encipher_only=None, decipher_only=None), critical=True)
-            .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
-            .sign(issuer_key or key, hashes.SHA256()))
+            .add_extension(x509.ExtendedKeyUsage([ExtendedKeyUsageOID.CLIENT_AUTH if client_only else ExtendedKeyUsageOID.SERVER_AUTH]), critical=False)
+            )
+    for extension, critical in extensions:
+        builder = builder.add_extension(extension, critical)
+    return builder.sign(issuer_key or key, hashes.SHA256())
 
 
 class Tests(unittest.TestCase):
@@ -42,16 +45,29 @@ class Tests(unittest.TestCase):
             root = certificate(root_key, None, None, 'test root', ca=True)
             root_path = directory/'root.pem'
             root_path.write_bytes(root.public_bytes(serialization.Encoding.PEM))
-            for kind in ['rsa', 'ecdsa', 'p256', 'wrong-host', 'unknown-ca', 'expired', 'tls12']:
+            for kind in ['rsa', 'ecdsa', 'p256', 'wrong-host', 'unknown-ca', 'expired', 'tls12', 'name-constraint', 'critical-extension', 'issuer-purpose']:
                 with self.subTest(kind=kind):
                     key = (ec.generate_private_key(ec.SECP256R1()) if kind == 'ecdsa' else
                            rsa.generate_private_key(public_exponent=65537, key_size=2048))
-                    leaf = certificate(key, key if kind == 'unknown-ca' else root_key,
-                                       None if kind == 'unknown-ca' else root,
+                    issuer_key, issuer = root_key, root
+                    chain = b''
+                    if kind in ['name-constraint', 'critical-extension', 'issuer-purpose']:
+                        issuer_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+                        extensions = []
+                        if kind == 'name-constraint':
+                            extensions = [(x509.NameConstraints([x509.DNSName('allowed.test')], None), True)]
+                        elif kind == 'critical-extension':
+                            extensions = [(x509.UnrecognizedExtension(ObjectIdentifier('1.3.6.1.4.1.55555.7'), b'\x05\x00'), True)]
+                        issuer = certificate(issuer_key, root_key, root, 'intermediate', ca=True,
+                                             extensions=extensions,
+                                             client_only=kind == 'issuer-purpose')
+                        chain = issuer.public_bytes(serialization.Encoding.PEM)
+                    leaf = certificate(key, key if kind == 'unknown-ca' else issuer_key,
+                                       None if kind == 'unknown-ca' else issuer,
                                        'wrong.example' if kind == 'wrong-host' else 'localhost',
                                        expired=kind == 'expired')
                     cert_path, key_path = directory/'leaf.pem', directory/'key.pem'
-                    cert_path.write_bytes(leaf.public_bytes(serialization.Encoding.PEM))
+                    cert_path.write_bytes(leaf.public_bytes(serialization.Encoding.PEM) + chain)
                     key_path.write_bytes(key.private_bytes(serialization.Encoding.PEM,
                         serialization.PrivateFormat.PKCS8, serialization.NoEncryption()))
                     backend = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Backend)

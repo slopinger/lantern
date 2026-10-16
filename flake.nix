@@ -13,7 +13,7 @@
   in {
     packages = each (system: let
       pkgs=nixpkgs.legacyPackages.${system};
-      raw=pkgs.haskellPackages.callCabal2nix "lantern" self {
+      raw=(tls.lib.cryptoPackages pkgs).callCabal2nix "lantern" self {
         lantern-http=http.packages.${system}.default;
         lantern-tls=tls.packages.${system}.default;
       };
@@ -66,7 +66,7 @@
     in {
       default=pkgs.mkShell {
         packages = [
-          (pkgs.haskellPackages.ghcWithPackages (_: [ http.packages.${system}.default tls.packages.${system}.default
+          ((tls.lib.cryptoPackages pkgs).ghcWithPackages (_: [ http.packages.${system}.default tls.packages.${system}.default
             pkgs.haskellPackages.async pkgs.haskellPackages.parsec pkgs.haskellPackages.mime-types pkgs.haskellPackages.QuickCheck ]))
           pkgs.cabal-install pkgs.openssl pkgs.caddy pkgs.wrk
           (pkgs.python3.withPackages (p: [ p.cryptography ]))

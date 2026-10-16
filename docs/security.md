@@ -32,7 +32,10 @@ the proxy must still authenticate/authorize users and understand their proxy bou
   can carry unread/ambiguous bytes into another exchange. HTTPS upstreams use our
   TLS client with SAN identity, certificate-chain/time/purpose verification and
   system roots or an explicit proxy-only bundle. No HTTP bytes precede successful
-  authentication, no plaintext fallback or certificate-verification bypass exists.
+  authentication. The TLS dependency pins Crypton 2.2.1 and the 1.10.0 certificate
+  verifier, with additional bounded DNS/IP constraints and inherited purpose checks;
+  unsupported constraint forms fail closed (see the TLS library security profile).
+  No plaintext fallback or certificate-verification bypass exists.
   TLS handshakes fall within the full upstream deadline. Trust roots are immutable
   per routing snapshot; failed reloads preserve the prior roots and routes.
 - There is no public management HTTP endpoint, shell command interpolation, CGI,

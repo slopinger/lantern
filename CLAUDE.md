@@ -67,3 +67,8 @@
   It does not read regular files or follow symlinks. All probe descriptors close.
 - Static tests include directory canonicalization, relative assets, query/Unicode/
   encoded-slash cases, HEAD reuse, descriptor cleanup and directory symlink races.
+
+- TLS security dependency update uses the TLS flake's lib.cryptoPackages for the
+  server build and dev shell, keeping Crypton 2.2.1/ram types consistent. Proxy
+  tests include invalid name constraints, critical extensions and issuer EKU,
+  requiring 502 without forwarding HTTP. No live deployment is changed.
