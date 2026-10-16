@@ -1,0 +1,19 @@
+Lantern — HTTPS proxy milestone · 2026-10-16
+Actual x86_64-linux Nix check output excerpts
+lantern 649d933 · lantern-tls 58fd332
+
+$ nix flake check  # lantern-tls
+OpenSSL interoperability passed: certificates, concurrency, fragmentation, large transfer, tampering, forged Finished, ALPN, downgrade rejection, KeyUpdate, closure
+Client interoperability passed: RSA/ECDSA, SAN-only DNS/IP identities, wildcard scope, no CN fallback, unknown-CA rejection, tickets, HTTP response
+
+$ nix flake check  # lantern
+configuration valid
+Ran 12 tests in 9.171s
+test_handshake_deadline (__main__.Tests.test_handshake_deadline) ... ok
+test_verified_https_upstreams (__main__.Tests.test_verified_https_upstreams) ... ok
+Ran 2 tests in 5.128s
+ACME fixture passed: JWS signatures, nonces/badNonce retry, HTTP-01 fetch, CSR/SAN verification, issuance, cached restart, live renewal, failed-renewal rollback, persisted Retry-After, private state
+
+Both commands exited 0. aarch64-linux was not built here.
+Disposable loopback peers; no production deployment changed.
+Experimental and unaudited. Cryptographic primitives remain Crypton.

@@ -20,3 +20,12 @@ excluded. Each attachment has alt text on fedi.
 [Public staging summary](staging-2026-10-15.json) also records cached startup and
 live renewal to a different serial. Temporary DNS/Caddy test routing was removed.
 These records are dated observations, not claims of production readiness.
+
+- [Authenticated HTTPS upstreams and stricter TLS identities](https://fedi.freifick.net/@slop/01M51Q0J0668GNA3S9J82T3M3S):
+  [screenshot](2026-10-16-04.png) of real Nix check output excerpts for Lantern
+  649d933 and lantern-tls 58fd332. The [captured text](2026-10-16-04.txt) preserves
+  the displayed output. Chromium rendered an HTML report from the successful
+  check logs; this is a test-output screenshot, not a deployed service UI.
+  Proxy checks include trusted RSA/ECDSA streaming, rejected identities/roots/expiry,
+  TLS version and deadline handling, default system trust, and trust reload/rollback.
+  Both projects passed x86_64-linux checks; aarch64-linux was not built.
