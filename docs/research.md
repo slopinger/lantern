@@ -223,3 +223,17 @@ The separately verified UTF-8 fix pins filesystem encoding at CLI/config startup
 and passes explicit UTF-8 bytes to the shim. Synthetic C-locale tests verify exact
 Unicode names/config/roots and prevent hidden/dot-prefix aliases. Directory tests
 also check actual relative-asset requests, canonical HEAD framing and race behavior.
+
+## ACME certificate validity (2026-10-16)
+
+[RFC 5280 section 4.1.2.5](https://www.rfc-editor.org/rfc/rfc5280.html#section-4.1.2.5)
+defines both validity bounds. A successful authenticated ACME download is not
+sufficient evidence that its leaf is usable now. Lantern previously checked only
+expiry, and the fixture reproduced activation of a correct-key certificate whose
+notBefore was tomorrow. Activation and cached startup now check both bounds,
+retaining the existing conservative rejection at the expiry second. Invalid
+renewal leaves the disk chain and active credentials intact and persists backoff.
+The CA fixture checks this rollback, then places the synthetic future-dated chain
+in the private cache and verifies startup acquires a usable replacement before
+opening HTTPS. This is leaf date validation, not a claim of full issued-chain
+verification. No cryptographic primitives are reimplemented.

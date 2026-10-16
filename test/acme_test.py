@@ -186,7 +186,7 @@ class CA(http.server.BaseHTTPRequestHandler):
             **({'certificate':s['base']+'/certificate/1'} if s['issued'] else {})}
     def sign_csr(self,csr,names):
         s=type(self).state;now=datetime.datetime.now(datetime.timezone.utc)
-        return x509.CertificateBuilder().subject_name(x509.Name([])).issuer_name(s['ca_cert'].subject).public_key(csr.public_key()).serial_number(x509.random_serial_number()).not_valid_before(now-datetime.timedelta(minutes=5)).not_valid_after(now+datetime.timedelta(days=30)).add_extension(x509.BasicConstraints(ca=False,path_length=None),critical=True).add_extension(x509.SubjectAlternativeName([x509.DNSName(n) for n in names]),critical=True).add_extension(x509.KeyUsage(digital_signature=True,content_commitment=False,key_encipherment=True,data_encipherment=False,key_agreement=False,key_cert_sign=False,crl_sign=False,encipher_only=None,decipher_only=None),critical=True).add_extension(x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),critical=False).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(s['ca_key'].public_key()),critical=False).sign(s['ca_key'],hashes.SHA256())
+        return x509.CertificateBuilder().subject_name(x509.Name([])).issuer_name(s['ca_cert'].subject).public_key(csr.public_key()).serial_number(x509.random_serial_number()).not_valid_before(now+datetime.timedelta(days=1) if s.get('future_certificate') else now-datetime.timedelta(minutes=5)).not_valid_after(now+datetime.timedelta(days=30)).add_extension(x509.BasicConstraints(ca=False,path_length=None),critical=True).add_extension(x509.SubjectAlternativeName([x509.DNSName(n) for n in names]),critical=True).add_extension(x509.KeyUsage(digital_signature=True,content_commitment=False,key_encipherment=True,data_encipherment=False,key_agreement=False,key_cert_sign=False,crl_sign=False,encipher_only=None,decipher_only=None),critical=True).add_extension(x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),critical=False).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(s['ca_key'].public_key()),critical=False).sign(s['ca_key'],hashes.SHA256())
 
 
 def wait_for(test, timeout=20):
@@ -313,9 +313,29 @@ site {state['name']} {{ respond "ACME works" }}
                 pem.write_bytes(active_chain)
                 pem.chmod(0o600)
             print('Automatic reload passed: concurrent renewal, missing/stale/malformed cache, HTTPS-only listener')
-            state['fail_next']=True
+            # A successful CA download can still contain an unusable leaf.
+            # Do not replace a working certificate with one not yet valid.
+            state['future_certificate'] = True
+            failures = server.logfile.read_text().count('renewal failed')
+            activations = server.logfile.read_text().count('renewed certificate activated')
             server.proc.send_signal(signal.SIGUSR1)
-            wait_for(lambda:'renewal failed' in server.logfile.read_text())
+            wait_for(lambda: server.logfile.read_text().count('renewal failed') > failures or
+                     server.logfile.read_text().count('renewed certificate activated') > activations)
+            assert server.logfile.read_text().count('renewal failed') > failures, 'future-dated issuance activated'
+            assert fetch() == renewed, 'future-dated issuance replaced active credentials'
+            assert pem.read_bytes() == active_chain, 'future-dated issuance replaced cached chain'
+            assert (d/'state'/'retry-until').exists(), server.logfile.read_text()
+            assert not (d/'state'/'pending-chain.pem').exists()
+            future_chain = state['chain']
+            state['future_certificate'] = False
+            # Clear only this synthetic fixture's backoff to exercise a separate
+            # HTTP failure without waiting five minutes.
+            (d/'state'/'retry-until').unlink()
+            print('ACME rejected future-dated issuance without replacing active or persisted credentials')
+            state['fail_next']=True
+            failures = server.logfile.read_text().count('renewal failed')
+            server.proc.send_signal(signal.SIGUSR1)
+            wait_for(lambda: server.logfile.read_text().count('renewal failed') > failures)
             assert fetch()==renewed and x509.load_pem_x509_certificate(pem.read_bytes()).serial_number==renewed
             assert (d/'state'/'retry-until').exists(), server.logfile.read_text()
             assert not (d/'state'/'pending-chain.pem').exists()
@@ -340,6 +360,19 @@ site {state['name']} {{ respond "ACME works" }}
                 except (OSError, ssl.SSLError):
                     return False
             wait_for(recovered, timeout=3)  # the last cancelled handshake must release its slot
+            # Cached startup must also reject a not-yet-valid certificate,
+            # rather than serving it until the renewal worker notices.
+            server.close()
+            pem.write_bytes(future_chain)
+            pem.chmod(0o600)
+            (d/'state'/'retry-until').unlink()
+            orders = state['orders']
+            server = Running(d, cfg, port, startup_timeout=30)
+            assert state['orders'] == orders + 1, 'future-dated cache was reused'
+            current = x509.load_pem_x509_certificate(pem.read_bytes()).serial_number
+            assert current != renewed and fetch() == current
+            assert not state['errors'], state['errors']
+            print('ACME replaced future-dated cached credentials before opening HTTPS')
         finally:
             if server:server.close()
             https.shutdown();https.server_close()

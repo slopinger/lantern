@@ -124,3 +124,11 @@ active credentials during SIGHUP. TLS-mode listeners fail closed if credentials
 are unavailable; only plain mode and the HTTP-01 listener select plain transport.
 The ACME fixture pauses reload in trust-file I/O while renewal activates, then
 checks the new certificate and new routes both survive, plus cache-fault cases.
+
+ACME checks both leaf validity bounds before activation and before cached startup
+(`notBefore <= now < notAfter`). Future-dated downloads retain the active and
+persisted chain and enter normal retry backoff. A future-dated cache triggers
+initial acquisition before the HTTPS listener opens. Renewal considers a
+not-yet-valid cache due. The synthetic CA fixture issues a future-dated leaf
+with the correct site key to test both renewal rollback and startup replacement.
+These checks do not claim a full ACME-issued chain policy audit.

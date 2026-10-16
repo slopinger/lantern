@@ -114,9 +114,9 @@ cachedCredentials cfg = do
     same <- if identityExists then (==manifest cfg) <$> privateRead (dir</>"identity") else pure False
     if not same then pure Nothing else do
       pem <- privateRead cert
-      (_,expiry) <- require (P.certificateTimes pem)
+      (start,expiry) <- require (P.certificateTimes pem)
       now <- floor <$> getPOSIXTime
-      if expiry <= now then pure Nothing else Just <$> TLS.loadCredentials cert key
+      if now < start || expiry <= now then pure Nothing else Just <$> TLS.loadCredentials cert key
 
 needsRenewal :: Config -> IO Bool
 needsRenewal cfg = do
@@ -124,7 +124,7 @@ needsRenewal cfg = do
   bytes <- privateRead (dir</>"chain.pem")
   (start,end) <- require (P.certificateTimes bytes)
   now <- floor <$> getPOSIXTime
-  pure (now >= start+(end-start)*2 `div` 3 || end-now < 86400)
+  pure (now < start || now >= start+(end-start)*2 `div` 3 || end-now < 86400)
 
 data Session = Session TLS.TrustStore URL URL P.Key B.ByteString (IORef (Maybe B.ByteString))
 
@@ -216,9 +216,9 @@ acquireCertificate cfg challenges = do
   certURL <- checkedURL directoryURL =<< jtext "certificate" completed
   (certCode,_,pemBytes) <- signed session False certURL B.empty
   unless (certCode == 200) (fail "ACME certificate download failed")
-  (_,expiry) <- require (P.certificateTimes pemBytes)
+  (start,expiry) <- require (P.certificateTimes pemBytes)
   now <- floor <$> getPOSIXTime
-  unless (expiry > now) (fail "ACME returned an expired certificate")
+  unless (start <= now && now < expiry) (fail "ACME returned a certificate outside its validity period")
   -- Validate the complete new chain/key pair before replacing the current chain.
   let temporary=dir</>"pending-chain.pem"
   atomicPrivate temporary pemBytes
