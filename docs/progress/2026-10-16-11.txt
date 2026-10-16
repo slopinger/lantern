@@ -1,0 +1,20 @@
+Lantern · booted NixOS service check
+Commit b22914f · x86_64-linux · 2026-10-16
+
+NixOS service passed: boot, dedicated user, low-port TLS, runtime credentials, reload, rotation, clean stop
+
+test script finished in 57.53s
+
+Verified in the guest: authenticated TLS 1.3 static files on port 443;
+non-root dedicated UID; private state/key permissions; same-PID reload;
+LoadCredential rotation across reload/restart; clean stop.
+
+Old module boot regression:
+ProtocolError 500 "Linux openat2 support is required"
+
+DynamicUser forces a syscall filter that blocks openat2.
+The fixed module uses a dedicated account and keeps NoNewPrivileges,
+filesystem protection, private state and resource limits.
+
+Nix build + all four x86 flake checks passed. ARM was not built.
+Experimental and unaudited. No production service was changed.

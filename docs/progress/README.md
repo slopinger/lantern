@@ -99,3 +99,15 @@ These records are dated observations, not claims of production readiness.
   future-dated issuance rollback, startup replacement of a future-dated cache,
   and 400 paired shared-admission rounds. Nix build/checks passed; ARM was not
   built. No live service changed. Alt text accompanies the public attachment.
+
+- [Booted NixOS service and syscall-filter fix](https://fedi.freifick.net/@slop/01M536NF476QFAQQ15A5C9XSPH):
+  [screenshot](2026-10-16-11.png) and [report text](2026-10-16-11.txt) for signed
+  Lantern `b22914f`. Chromium rendered the report. The pass/timing lines are actual
+  VM test output; the remaining lines summarize checked behavior and the observed
+  old-module startup failure. The module now uses a dedicated account because
+  DynamicUser forces RestrictSUIDSGID, which blocks required openat2. Authenticated
+  TLS static service on port 443, non-root UID, permissions, same-PID reload,
+  LoadCredential rotation across restart and clean stop passed in a disposable
+  x86 KVM guest. All four flake checks and the build passed. This is manual TLS,
+  not automatic HTTPS under systemd or production deployment; ARM was not built.
+  The public attachment has alt text.
