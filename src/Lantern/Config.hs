@@ -198,7 +198,7 @@ loadConfig file = do
   absolute <- makeAbsolute file
   bytes <- withBinaryFile absolute ReadMode (\h -> B.hGet h 131073)
   when (B.length bytes > 131072) $ fail "configuration exceeds 128 KiB"
-  txt <- either (fail . show) pure (TE.decodeUtf8' bytes)
+  txt <- either (const (fail "configuration must use valid UTF-8")) pure (TE.decodeUtf8' bytes)
   cfg <- either fail pure (parseConfig file (T.unpack txt))
   _ <- (N.getAddrInfo (Just N.defaultHints {N.addrFlags=[N.AI_NUMERICHOST,N.AI_NUMERICSERV],N.addrSocketType=N.Stream})
     (Just (endpointHost (listen cfg))) (Just (show (endpointPort (listen cfg)))) :: IO [N.AddrInfo])

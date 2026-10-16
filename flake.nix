@@ -34,6 +34,7 @@
       } ''
         cp -r ${self}/test test
         chmod -R u+w test
+        python test/cli_test.py
         python test/http_test.py
         python test/static_test.py
         python test/path_encoding_test.py

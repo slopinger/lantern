@@ -104,3 +104,14 @@ Worker cleanup cannot overtake registration. A socket rejected or interrupted
 before transfer of ownership closes; accepted workers own closure and removal.
 The ACME fixture tests 400 paired HTTP/TLS arrivals at max_connections=1, requiring
 at most one peer to receive protocol bytes and continued successful admissions.
+
+- CLI help aliases (-h/--help/help), --version, run/check --config FILE (also
+  --config=FILE), and -- FILE are supported. Ordinary positional/default config
+  paths remain supported; dash-prefixed names use -- or --config. Main preserves
+  ExitCode, handles startup/check SIGINT as 130 and
+  rethrows other asynchronous exceptions. Expected errors omit GHC backtraces;
+  stdout/stderr and filesystem arguments are explicitly UTF-8.
+- test/cli_test.py is in flake integration: real run/stop, argument/error status,
+  C-locale Unicode diagnostics, interrupting a pending config read, and check with
+  an occupied port/observed dummy CA and no state creation. Runtime config/read
+  validation and the server's graceful SIGINT/SIGTERM behavior remain enforced.

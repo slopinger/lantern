@@ -19,7 +19,15 @@ site localhost {
 Paths are relative to the Lanternfile. `lantern run` and `lantern check` default
 to `./Lanternfile`. `lantern check path/to/Lanternfile` validates without binding
 ports, contacting a CA, or creating an account. `lantern version` prints the
-version. Send **SIGHUP** to reload routes/headers and manual TLS credentials;
+version (`--version` is equivalent). `--help`, `-h`, `help run`, and `help check`
+show usage without loading configuration. Both commands also accept
+`--config FILE` or `--config=FILE`; use `run -- FILE` / `check -- FILE` for a
+filename beginning with a dash. Expected failures print one concise diagnostic
+to stderr and exit with status 1. Diagnostics and filenames use UTF-8 even in a
+C locale. Interrupting startup/check with Ctrl-C exits 130; the running server's
+SIGINT handler still performs its normal graceful stop.
+
+Send **SIGHUP** to reload routes/headers and manual TLS credentials;
 invalid reloads retain the complete working configuration. Send **SIGTERM** for
 a ten-second drain followed by connection cancellation.
 
