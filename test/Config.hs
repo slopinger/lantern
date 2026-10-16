@@ -4,6 +4,7 @@ import Control.Monad (unless,forM_)
 import qualified Data.ByteString as B
 import qualified Data.Text as T
 import qualified Data.Map.Strict as M
+import qualified Lantern.Client as Client
 import Lantern.Config
 import qualified Lantern.JSON as J
 import Lantern.ACME (retryDelay)
@@ -30,6 +31,18 @@ main=do
       "\"a\n\"", "[true] trailing", B.replicate 33 91<>B.replicate 33 93] $ \bad ->
     check "invalid JSON accepted" (case J.decode bad of Left _ -> True;Right _ -> False)
   check "surrogate pair" (J.decode "\"\\ud83d\\ude00\""==Right (J.String "😀"))
+  forM_ [("https://EXAMPLE.org?nonce=a%2Fb", "example.org",443,"/?nonce=a%2Fb","example.org"),
+      ("https://[::1]", "::1",443,"/","[::1]"),
+      ("https://[::1]:8443/a?q=x", "::1",8443,"/a?q=x","[::1]:8443")] $ \(raw,host,port,target,hostHeader) -> do
+    url<-either fail pure (Client.parseURL raw)
+    check "HTTPS URL components" (Client.urlHost url==host && Client.urlPort url==port &&
+      Client.urlTarget url==target && Client.authority url==hostHeader && Client.urlOriginal url==raw)
+  first<-either fail pure (Client.parseURL "https://EXAMPLE.org/a")
+  second<-either fail pure (Client.parseURL "https://example.org:443/b")
+  check "case insensitive HTTPS origin" (Client.sameOrigin first second)
+  forM_ ["https://example.org/%", "https://example.org/%xy", "https://user@example.org/a",
+      "https://example.org/#fragment", "https://[::1", "https://example.org?x=%0"] $ \raw ->
+    check "invalid HTTPS URL accepted" (case Client.parseURL raw of Left _ -> True; Right _ -> False)
   delay<-retryDelay [("retry-after","120")]
   check "Retry-After delta" (delay==120)
   past<-retryDelay [("retry-after","Wed, 01 Jan 2020 00:00:00 GMT")]

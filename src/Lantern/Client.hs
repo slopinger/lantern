@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Lantern.Client (URL(..), parseURL, sameOrigin, request) where
+module Lantern.Client (URL(..), parseURL, sameOrigin, request, authority) where
 import Control.Exception (try,SomeException,AsyncException,fromException,throwIO)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
@@ -16,18 +16,32 @@ parseURL raw = do
   if not ("https://" `B.isPrefixOf` raw) || B.length raw > 8192 ||
      not (B.all (\c -> c > 32 && c < 127 && c /= 35 && c /= 92) raw)
     then Left "ACME URLs must be bounded ASCII HTTPS URLs" else pure ()
-  let (authority,target)=C.break (== '/') (B.drop 8 raw)
-      endpoint=if C.elem ':' authority then C.unpack authority else C.unpack authority++":443"
+  let (hostPort,target)=C.break (\c -> c == '/' || c == '?') (B.drop 8 raw)
+      endpoint=if B.isPrefixOf "[" hostPort
+        then if B.isSuffixOf "]" hostPort then C.unpack hostPort++":443" else C.unpack hostPort
+        else if C.elem ':' hostPort then C.unpack hostPort else C.unpack hostPort++":443"
   Endpoint host port <- parseEndpoint endpoint
-  pure (URL host port (if B.null target then "/" else target) raw)
+  let path=if B.null target then "/" else if B.head target==63 then "/"<>target else target
+  if validEscapes path then pure () else Left "invalid percent escape in HTTPS URL"
+  pure (URL (C.unpack (lower (C.pack host))) port path raw)
+  where
+    validEscapes bytes=case B.uncons bytes of
+      Nothing -> True
+      Just (37,rest) -> B.length rest>=2 && B.all hex (B.take 2 rest) && validEscapes (B.drop 2 rest)
+      Just (_,rest) -> validEscapes rest
+    hex c=(c>=48 && c<=57)||(c>=65 && c<=70)||(c>=97 && c<=102)
 sameOrigin :: URL -> URL -> Bool
-sameOrigin a b=urlHost a==urlHost b && urlPort a==urlPort b
+sameOrigin a b=lower (C.pack (urlHost a))==lower (C.pack (urlHost b)) && urlPort a==urlPort b
+
+-- Brackets belong to an IPv6 HTTP authority, but not the TLS reference name.
+authority :: URL -> B.ByteString
+authority url=C.pack (host ++ if urlPort url == 443 then "" else ":"++show (urlPort url))
+  where host=if ':' `elem` urlHost url then "["++urlHost url++"]" else urlHost url
 
 request :: TLS.TrustStore -> B.ByteString -> URL -> B.ByteString -> IO (Int,Headers,B.ByteString)
 request trust method url body = deadline 30 504 $ withSocket (Endpoint (urlHost url) (urlPort url)) $ \socket -> do
   context <- TLS.connect trust (urlHost url) (recv socket 16384) (sendAll socket)
-  let authority=C.pack (urlHost url ++ if urlPort url == 443 then "" else ":"++show (urlPort url))
-      headers=[("host",authority),("connection","close"),("user-agent","lantern/0.1.0"),
+  let headers=[("host",authority url),("connection","close"),("user-agent","lantern/0.1.0"),
         ("accept","application/json, application/pem-certificate-chain"),
         ("content-type","application/jose+json"),("content-length",C.pack (show (B.length body)))]
   TLS.send context (method<>" "<>urlTarget url<>" HTTP/1.1\r\n"<>

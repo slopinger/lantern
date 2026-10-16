@@ -21,3 +21,6 @@
   2026-10-15; temporary DNS/Caddy routing was removed afterwards.
 - Progress posts with screenshots are authorized for this task; use real evidence,
   no secrets/session links, and alt text. Log published post links in docs/progress.
+
+- ACME URL parser preserves original JWS URLs, compares hostnames case-insensitively,
+  handles query-only targets and IPv6 authorities, and rejects malformed escapes.

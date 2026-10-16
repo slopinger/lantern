@@ -156,3 +156,8 @@ aarch64-linux is defined but has not been built here.
 [Research and architecture](docs/research.md), [security scope](docs/security.md),
 [deployment](docs/deployment.md), [benchmark results](docs/benchmarks.md), and
 [progress screenshots/posts](docs/progress/README.md) provide the evidence and limits.
+
+ACME HTTPS URLs preserve their original bytes for JWS signing, normalize host
+case for origin checks, support query-only targets and bracketed IPv6 authorities,
+and reject malformed percent escapes. Redirects and embedded credentials remain
+unsupported.
