@@ -1,0 +1,17 @@
+{
+  "browser": "Chromium",
+  "observations": [
+    {
+      "requested_target": "/guide?check=1",
+      "relative_assets": "verified"
+    },
+    {
+      "requested_target": "/guide%2f?check=1",
+      "relative_assets": "verified"
+    }
+  ],
+  "screenshot": "2026-10-16-07.png",
+  "server_revision": "45a7a96",
+  "encoding_fix_revision": "b8f8023",
+  "scope": "Disposable loopback fixture; no live service deployment."
+}

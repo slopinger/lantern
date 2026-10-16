@@ -201,3 +201,13 @@ parameter-change checks apply to retries as well as ordinary handshakes.
 Filesystem paths are passed to the confinement shim as explicit UTF-8 bytes.
 Process locale does not change a validated URL's filename; this also protects
 hidden/dot-component checks when the service starts under the C locale.
+
+Optional real-browser directory QA (Chromium installed or provided via Nix):
+
+```sh
+python test/directory_browser.py --binary ./result/bin/lantern --out /tmp/lantern-directory.png
+```
+
+It starts a disposable loopback site, verifies plain/encoded-slash redirects and
+relative CSS/JS/JSON in isolated browser profiles, captures the fixture page, then
+stops the server. This does not deploy or browse production services.

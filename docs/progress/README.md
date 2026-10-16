@@ -51,3 +51,14 @@ These records are dated observations, not claims of production readiness.
   [repeat](../benchmark-2026-10-16-static-cache.json) results preserve all trials.
   The repeat observed higher small-file/304 rates; Caddy remained faster. Neither
   shared-VM loopback run establishes general throughput or production security.
+
+- [Directory canonicalization and locale-safe paths](https://fedi.freifick.net/@slop/01M51VJVG4KNZVG7EJNYPWA6Y8):
+  [actual browser screenshot](2026-10-16-07.png) of a disposable static site served
+  by the Nix-built Lantern 45a7a96. The [browser observations](directory-2026-10-16.json)
+  verify plain and encoded-slash URLs, preserved query and relative CSS/JS/JSON.
+  Reproduce with `test/directory_browser.py`; isolated profiles and the loopback
+  server are removed afterward. This image is a rendered test site, not a report
+  mockup or production deployment. The separately verified security commit b8f8023
+  fixes locale-dependent path aliases using explicit UTF-8. Both commits passed
+  x86_64 Nix builds/checks, including synthetic C-locale paths, directory symlink
+  races, search-only directories, HEAD, descriptor cleanup and HTTP/proxy/ACME tests.
