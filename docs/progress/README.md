@@ -111,3 +111,16 @@ These records are dated observations, not claims of production readiness.
   x86 KVM guest. All four flake checks and the build passed. This is manual TLS,
   not automatic HTTPS under systemd or production deployment; ARM was not built.
   The public attachment has alt text.
+
+- [Bounded HTTP line work](https://fedi.freifick.net/@slop/01M537RB0HP0ZWQZC4FM6SA8FW):
+  [screenshot](2026-10-16-12.png) and [report text](2026-10-16-12.txt) for
+  HTTP `c9a0b57`, pinned by Lantern `5577b9f`. Chromium rendered actual median CPU
+  and allocation data from the library's published fragmentation JSON; the other
+  lines summarize implementation/check scope. Three alternating pairs parse one
+  fixed 8135-byte request repeatedly. Single-byte allocation falls about 95%;
+  the whole-buffer long-line control used about 2.4% more CPU and 48 extra bytes
+  per request. All exploratory/prototype/final observations remain published.
+  This is parser work without sockets/TLS/files or a Caddy throughput comparison.
+  Library tests (9000 wire + 3000 representation properties), 13 server HTTP tests,
+  ACME and the booted NixOS service passed. Both Nix builds/checks passed on x86;
+  ARM was not built, production unchanged. The attachment includes alt text.

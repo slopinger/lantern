@@ -1,0 +1,23 @@
+Lantern HTTP · fragmented line work
+HTTP c9a0b57 · server 5577b9f · x86_64-linux · 2026-10-16
+
+Three alternating revision pairs. Fixed 8,135-byte request.
+Process CPU includes GC. Allocations are total RTS bytes, not peak memory.
+
+Receive Requests       Allocated before -> after             CPU seconds
+      1      100  3,535,841,928 ->   189,872,576  5.510307 -> 0.074775
+    128     1000    611,190,776 ->   349,601,928  0.538519 -> 0.110566
+  16384    10000  3,292,004,128 -> 3,292,484,144  1.037236 -> 1.061967
+
+Single-byte case: about 95% less allocation.
+Whole-buffer long-line control: about 2.4% more CPU, +48 bytes/request.
+
+The parser scans only new bytes and checks the CR/LF fragment boundary.
+Pending fragments remain byte-bounded; no repeated prefix copies/scans.
+
+HTTP: 9,000 wire + 3,000 representation properties passed.
+Server: 13 HTTP tests, ACME fixture, NixOS boot/credential rotation passed.
+Nix builds/checks passed. ARM unbuilt; no production change.
+
+Parser experiment only: no sockets, TLS, file I/O or Caddy comparison.
+All initial, prototype and final trials are published. Experimental/unaudited.
