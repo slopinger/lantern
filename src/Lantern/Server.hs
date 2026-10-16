@@ -173,26 +173,27 @@ reloadConfig file original state = do
 acceptLoop :: Socket -> Config -> IORef Snapshot -> Registry -> Maybe ACME.Challenges -> IORef Integer -> IO ()
 acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ \restore -> do
   (socket',peer) <- restore (accept listener)
-  (stopped,clients) <- readMVar registry
-  if stopped || M.size clients >= maxConnections cfg then close socket' else do
-    gate <- newEmptyMVar
-    tid <- forkIOWithUnmask $ \unmask -> do
-      takeMVar gate
-      self <- myThreadId
-      let cleanup = close socket' `finally` modifyMVar_ registry (\(s,m) -> pure (s,M.delete self m))
-          task = do
-            setSocketOption socket' NoDelay 1
-            Snapshot _ creds _ _ <- readIORef state
-            transport <- case (challenges,creds) of
-              (Just _,_) -> pure (plainTransport socket')
-              (_,Nothing) -> pure (plainTransport socket')
-              (_,Just _) -> tlsTransport (do
-                Snapshot _ c _ _ <- readIORef state
-                maybe (fail "missing TLS credentials") pure c) socket'
-            serveConnection cfg state peer transport challenges bodyBudget `finally` finish transport
-      (unmask task `catch` quietConnection) `finally` cleanup
-    modifyMVar_ registry (\(s,m) -> pure (s,M.insert tid socket' m))
-    putMVar gate ()
+  (do
+    admitted <- modifyMVarMasked registry $ \(stopped,clients) ->
+      if stopped || M.size clients >= maxConnections cfg
+        then pure ((stopped,clients),False)
+        else do
+          tid <- forkIOWithUnmask $ \unmask -> do
+            self <- myThreadId
+            let cleanup = close socket' `finally` modifyMVar_ registry (\(s,m) -> pure (s,M.delete self m))
+                task = do
+                  setSocketOption socket' NoDelay 1
+                  Snapshot _ creds _ _ <- readIORef state
+                  transport <- case (challenges,creds) of
+                    (Just _,_) -> pure (plainTransport socket')
+                    (_,Nothing) -> pure (plainTransport socket')
+                    (_,Just _) -> tlsTransport (do
+                      Snapshot _ c _ _ <- readIORef state
+                      maybe (fail "missing TLS credentials") pure c) socket'
+                  serveConnection cfg state peer transport challenges bodyBudget `finally` finish transport
+            (unmask task `catch` quietConnection) `finally` cleanup
+          pure ((stopped,M.insert tid socket' clients),True)
+    unless admitted (close socket')) `onException` close socket'
   where
     quietConnection e = case fromException e :: Maybe AsyncException of
       Just async -> throwIO async

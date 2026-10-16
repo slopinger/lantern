@@ -228,3 +228,7 @@ nix develop -c python test/profile_static.py --out syscalls.json
 The helper creates a disposable loopback server and verifies 1,000 responses.
 Tracing changes timings; use its syscall counts alongside the separate benchmark
 instructions in [performance observations](docs/benchmarks.md).
+
+The connection limit is shared atomically by HTTPS and HTTP-01 listeners, including
+clients still handshaking or waiting for request headers. The loopback ACME fixture
+also exercises concurrent arrivals at a one-connection limit.

@@ -145,3 +145,10 @@ HTTP-01 responses also have one complete write deadline. A failed partial interi
 100-continue write prevents a second response; a successful interim still permits
 normal final/error responses. Slow-reader tests verify continuing progress cannot
 extend a static transfer beyond its absolute write budget.
+
+Connection admission is atomic across the main and HTTP-01 listeners: the stopped
+flag, capacity check, worker creation and registration share the registry lock.
+Worker cleanup cannot overtake registration. A socket rejected or interrupted
+before transfer of ownership closes; accepted workers own closure and removal.
+The ACME fixture tests 400 paired HTTP/TLS arrivals at max_connections=1, requiring
+at most one peer to receive protocol bytes and continued successful admissions.

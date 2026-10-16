@@ -97,3 +97,10 @@
   server threads, and --conditional-only measures 304s without bulk-load trials.
   Shared-VM throughput varied substantially, including Caddy controls; preserve
   raw trials and report the actual workload/CPU metric, not a general speed claim.
+
+Connection admission is atomic across the main and HTTP-01 listeners: the stopped
+flag, capacity check, worker creation and registration share the registry lock.
+Worker cleanup cannot overtake registration. A socket rejected or interrupted
+before transfer of ownership closes; accepted workers own closure and removal.
+The ACME fixture tests 400 paired HTTP/TLS arrivals at max_connections=1, requiring
+at most one peer to receive protocol bytes and continued successful admissions.

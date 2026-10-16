@@ -2,6 +2,7 @@
 """Disposable ACME CA fixture verifies real JWS/CSR and fetches actual HTTP-01.
 Crypto/test HTTPS use established Python libraries; Lantern uses its own stack.
 """
+import concurrent.futures
 import base64
 import datetime
 import hashlib
@@ -23,6 +24,55 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding, rsa
 from cryptography.x509.oid import NameOID
 from http_test import free_port, Running, BINARY
+
+
+def check_shared_admission(http_port, tls_port, hostname):
+    context = ssl.SSLContext(ssl.PROTOCOL_TLS_CLIENT)
+    context.minimum_version = context.maximum_version = ssl.TLSVersion.TLSv1_3
+    context.set_ecdh_curve('X25519')
+    context.set_alpn_protocols(['http/1.1'])
+    outgoing = ssl.MemoryBIO()
+    handshake = context.wrap_bio(ssl.MemoryBIO(), outgoing, server_hostname=hostname)
+    try:
+        handshake.do_handshake()
+    except ssl.SSLWantReadError:
+        pass
+    hello = outgoing.read()
+    barrier = threading.Barrier(2)
+    def connect(port):
+        barrier.wait(timeout=3)
+        return socket.create_connection(('127.0.0.1', port), timeout=3)
+    admitted_rounds = 0
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as workers:
+        for round_number in range(400):
+            futures = [workers.submit(connect, port) for port in [http_port, tls_port]]
+            peers = [future.result(timeout=4) for future in futures]
+            try:
+                messages = [f'GET /limit HTTP/1.1\r\nHost: {hostname}\r\n\r\n'.encode(), hello]
+                live = []
+                for peer, message in zip(peers, messages):
+                    peer.settimeout(.5)
+                    try:
+                        peer.sendall(message)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass
+                for index, peer in enumerate(peers):
+                    try:
+                        first = peer.recv(1)
+                    except ConnectionResetError:
+                        first = b''
+                    assert first in ([b'', b'H'] if index == 0 else [b'', b'\x16']), (index, first)
+                    live.append(bool(first))
+                # HTTP is now held in keepalive; TLS awaits the client's Finished.
+                # Positive protocol bytes prove admission, rather than TCP backlog.
+                assert sum(live) <= 1, ('shared admission limit exceeded', round_number, live)
+                admitted_rounds += any(live)
+            finally:
+                for peer in peers:
+                    peer.close()
+            time.sleep(.005)
+    assert admitted_rounds >= 50, ('admission stopped making progress', admitted_rounds)
+    print(f'Shared admission passed: 400 simultaneous HTTP/TLS arrivals, {admitted_rounds} rounds with service')
 
 
 def b64(b):
@@ -215,6 +265,15 @@ site {state['name']} {{ respond "ACME works" }}
             c=http.client.HTTPConnection('127.0.0.1',http_port,timeout=4)
             c.request('GET','/hello?x=1',headers={'Host':state['name']})
             r=c.getresponse();assert r.status==308 and r.getheader('location')==f'https://{state["name"]}:{port}/hello?x=1';r.read();c.close()
+            server.close()
+            server=Running(d,cfg.replace('auto_https', 'max_connections 1\nauto_https', 1),port)
+            check_shared_admission(http_port, port, state['name'])
+            def recovered():
+                try:
+                    return fetch()==renewed
+                except (OSError, ssl.SSLError):
+                    return False
+            wait_for(recovered, timeout=3)  # the last cancelled handshake must release its slot
         finally:
             if server:server.close()
             https.shutdown();https.server_close()
