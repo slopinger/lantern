@@ -36,6 +36,7 @@
         chmod -R u+w test
         python test/http_test.py
         python test/static_test.py
+        python test/path_encoding_test.py
         python test/https_proxy_test.py
         python test/acme_test.py
         touch $out

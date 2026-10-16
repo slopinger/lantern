@@ -46,7 +46,7 @@ pathFromTarget target = do
 withFileBelow :: FilePath -> FilePath -> (Handle -> FileStatus -> IO a) -> IO a
 withFileBelow root relative action = bracket acquire (hClose . fst) (uncurry action)
   where
-    acquire = withCString root $ \r -> withCString relative $ \p -> do
+    acquire = withUTF8Path root $ \r -> withUTF8Path relative $ \p -> do
       raw <- confinedOpen r p
       whenInvalid raw
       let fd=Fd raw
@@ -59,6 +59,13 @@ withFileBelow root relative action = bracket acquire (hClose . fst) (uncurry act
       if err == eMFILE || err == eNFILE then failHTTP 503 "file descriptor limit"
         else if err == eNOSYS then throwErrno "openat2 unavailable"
         else failHTTP 404 "file not found"
+
+-- HTTP paths and Lanternfiles are UTF-8. Locale-dependent C-string conversion
+-- can silently discard non-ASCII characters, changing a validated path.
+withUTF8Path :: FilePath -> (CString -> IO a) -> IO a
+withUTF8Path path action = do
+  unless ('\0' `notElem` path) (ioError (userError "NUL in filesystem path"))
+  B.useAsCString (TE.encodeUtf8 (T.pack path)) action
 
 -- Fail before opening a public listener if the kernel lacks our required primitive.
 probeConfinement :: IO ()

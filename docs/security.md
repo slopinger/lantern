@@ -106,3 +106,12 @@ No body data or file descriptors are retained. A miss at capacity replaces the
 map; a reload creates a new cache. This optimization does not strengthen metadata
 ETags or relax the atomic-publication requirement. Tests replace a warmed path
 with an escaping symlink and check Date refresh on repeated cached responses.
+
+UTF-8 URL/config paths use explicit UTF-8 at the filesystem FFI boundary. The
+locale-dependent C-string conversion could discard non-ASCII characters under
+LC_ALL=C after path validation, potentially resolving a different or hidden file.
+The CLI and configuration loader select UTF-8 filesystem encoding before
+reading arguments/files, and the shim boundary encodes UTF-8 explicitly with NUL
+rejection. A C-locale loopback
+regression checks exact Unicode filenames and hidden/dot-prefix non-aliasing using
+synthetic files. Confinement remains kernel-enforced for the exact encoded bytes.

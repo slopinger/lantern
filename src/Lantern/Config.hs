@@ -3,6 +3,7 @@ module Lantern.Config
   ( Config(..), Site(..), Action(..), TLSMode(..), Endpoint(..), Upstream(..)
   , loadConfig, parseConfig, parseEndpoint, hostName, immutable
   ) where
+import GHC.IO.Encoding (setFileSystemEncoding, utf8)
 import Control.Monad (unless, when)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
@@ -193,6 +194,7 @@ parseConfig name input = do
 
 loadConfig :: FilePath -> IO Config
 loadConfig file = do
+  setFileSystemEncoding utf8
   absolute <- makeAbsolute file
   bytes <- withBinaryFile absolute ReadMode (\h -> B.hGet h 131073)
   when (B.length bytes > 131072) $ fail "configuration exceeds 128 KiB"

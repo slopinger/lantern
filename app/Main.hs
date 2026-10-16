@@ -2,10 +2,12 @@ module Main (main) where
 import Control.Exception (SomeException, catch, displayException)
 import System.Environment (getArgs)
 import System.Exit (die)
+import GHC.IO.Encoding (setFileSystemEncoding, utf8)
 import Lantern.Server (runServer, checkConfig)
 
 main :: IO ()
 main = (do
+  setFileSystemEncoding utf8
   args <- getArgs
   case args of
     ["run"] -> runServer "Lanternfile"

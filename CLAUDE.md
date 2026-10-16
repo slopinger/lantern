@@ -52,3 +52,9 @@
   No file bytes/FDs are cached. Keys include inode/device, size, high-res mtime/ctime,
   media/config headers (no retained URI spellings). Reloads start fresh; ACME credential renewal preserves
   the current cache/routes. Do not infer stronger ETag guarantees from caching.
+
+- Filesystem FFI paths must use explicit UTF-8 (withUTF8Path), never locale-based
+  withCString for URL/config paths: LC_ALL=C can discard characters after checks.
+  test/path_encoding_test.py exercises exact Unicode paths and hidden/dot-prefix
+  non-aliasing under a C-locale child server, including Unicode config/root paths.
+  CLI/config loading fixes filesystem encoding to UTF-8. NUL bytes remain rejected.

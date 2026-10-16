@@ -193,3 +193,7 @@ The TLS library supports X25519 and P-256 key agreement and one HelloRetryReques
 within the original handshake deadline. The server can request a missing key
 share; the HTTPS client can answer P-256 and cookie retries. Transcript and
 parameter-change checks apply to retries as well as ordinary handshakes.
+
+Filesystem paths are passed to the confinement shim as explicit UTF-8 bytes.
+Process locale does not change a validated URL's filename; this also protects
+hidden/dot-component checks when the service starts under the C locale.
