@@ -24,14 +24,15 @@ def free_port():
 
 
 class Running:
-    def __init__(self, directory, config, port):
+    def __init__(self, directory, config, port, startup_timeout=4):
         self.file = directory/'Lanternfile'
         self.file.write_text(config)
         self.logfile = directory/'server.log'
         self.log = self.logfile.open('w+')
         self.proc = subprocess.Popen([BINARY, 'run', str(self.file)], stdout=self.log, stderr=self.log)
         self.port = port
-        for _ in range(200):
+        ready_deadline = time.monotonic()+startup_timeout
+        while time.monotonic() < ready_deadline:
             if self.proc.poll() is not None:
                 self.log.flush()
                 raise AssertionError(self.logfile.read_text())
@@ -40,8 +41,10 @@ class Running:
                     return
             except OSError:
                 time.sleep(.02)
+        self.log.flush()
+        detail = self.logfile.read_text()
         self.close()
-        raise AssertionError('startup timeout')
+        raise AssertionError(f'startup timeout after {startup_timeout}s: {detail}')
 
     def close(self):
         if self.proc.poll() is None:

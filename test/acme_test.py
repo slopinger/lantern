@@ -173,7 +173,9 @@ site {state['name']} {{ respond "ACME works" }}
 '''
         server=None
         try:
-            server=Running(d,cfg,port)
+            # Initial provisioning includes probabilistic RSA key generation and
+            # the complete ACME exchange before the HTTPS listener is ready.
+            server=Running(d,cfg,port,startup_timeout=30)
             assert state['bad_nonce_done'] and state['orders']==1 and state['challenge_fetches']==1
             assert not state['errors'],state['errors']
             pem=d/'state'/'chain.pem'
