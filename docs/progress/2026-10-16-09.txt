@@ -1,0 +1,27 @@
+Lantern static I/O / response deadlines — 2026-10-16
+Source: 431e99a + ea3c072; baseline 7ae95ed
+
+Observed CPU microseconds per request (median of 3 trials):
+workload                 before       combined
+   4 KiB full                346.2          279.9
+1024 KiB full               2715.5         1964.6
+   4 KiB 304                 292.9          241.6
+1024 KiB 304                 291.5          259.2
+
+1000 verified 4 KiB GETs under strace + RTS stats:
+heap allocated bytes:  68,551,056 -> 48,053,904
+fstat calls:                3,025 -> 2,025
+fcntl calls:                1,023 -> 23
+ioctl calls:                1,003 -> 3
+
+Confinement and same-descriptor metadata retained.
+Slow-reader deadline and 80 aborted-transfer cleanup checks pass.
+Nix build + flake checks passed (x86_64).
+
+Shared VM; warm loopback HTTP/1.1, 2 server schedulers,
+2 generator threads, 32 connections, three 3-second trials.
+CPU is process user+system time per reported request, not latency.
+Host load moved throughput controls substantially; all trials retained.
+TLS, cold files and WAN performance are not measured here.
+
+Experimental, unaudited. This screenshot renders a real test report.

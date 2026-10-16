@@ -74,3 +74,18 @@ These records are dated observations, not claims of production readiness.
   rejection before HTTP and ACME issuance/renewal. Crypton 2.2.1 also fixes the
   2.2.0 AVX2 portability defect. ARM was not built; software remains experimental
   and unaudited. Temporary posting credentials were revoked and the app removed.
+
+- [Static descriptor I/O and response deadlines](https://fedi.freifick.net/@slop/01M52QJ9RJ9ZZP8CWPJNNGS0BJ):
+  [report screenshot](2026-10-16-09.png) and [report text](2026-10-16-09.txt)
+  summarize actual JSON observations in [benchmarks](../benchmarks.md), comparing
+  baseline `7ae95ed` with the runtime changes published as `431e99a` + `ea3c072`.
+  Chromium rendered this report; it is not a production-site screenshot. The
+  profile verifies 1,000 4 KiB responses and records syscall counts/RTS allocation.
+  CPU-accounted full and conditional repeats preserve every trial and control;
+  measurements used warm loopback HTTP/1.1 on a shared VM. Allocation was about
+  30% lower and measured full-response CPU/request about 19–28% lower. Descriptor
+  I/O alone did not establish a throughput win, and host load substantially moved
+  controls in a subsequent run. No general Caddy/TLS/WAN performance claim follows.
+  x86_64 Nix build/checks passed, including slow-reader deadlines, 80 aborted
+  transfers, range/confinement, TLS proxy and ACME checks. ARM was not built.
+  Posting credentials were revoked and the temporary OAuth app was removed.
