@@ -95,7 +95,10 @@ site old.example.com {
 Quoted values support spaces, escaped quotes and backslashes. `#` starts a comment
 outside quotes. Unknown directives, duplicate global directives, duplicate hosts,
 multiple actions, and unsafe response headers fail validation. DNS names use
-ASCII A-labels. `listen` requires a numeric address and explicit port. All modes
+ASCII A-labels. `listen` requires a numeric address and explicit port. Endpoint hosts use valid
+ASCII DNS labels or bracketed IPv6 literals; malformed labels/literals, bracketed
+DNS names, zone identifiers and IPvFuture are rejected during validation.
+Automatic-HTTPS startup validates CA URLs before creating state or binding HTTP-01. All modes
 support HTTP/1.1 keep-alive and pipelining. HTTP/1.0 has a strict limited profile.
 
 | Directive | Default / meaning |
@@ -171,7 +174,7 @@ matchers. This is not a complete Caddy replacement.
 
 The committed flake lock pins exact revisions of both libraries. Other runtime
 support consists of GHC/base, bytestring, text/containers, network sockets, unix,
-directory/filepath/time, small parser/concurrency helpers, and MIME lookup. The
+directory/filepath/time, small parser/concurrency helpers, IP address decoding, and MIME lookup. The
 only C code is a small Linux filesystem confinement primitive. None implements
 HTTP or TLS on our behalf.
 

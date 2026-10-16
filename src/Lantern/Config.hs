@@ -9,6 +9,8 @@ import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import Data.Char (isAscii, isAlphaNum, toLower)
 import Data.List (nub)
+import Data.IP (IPv6)
+import Text.Read (readMaybe)
 import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import System.Directory (canonicalizePath, doesDirectoryExist, makeAbsolute)
@@ -102,13 +104,16 @@ parseEndpoint :: String -> Either String Endpoint
 parseEndpoint s = do
   (host,port) <- case s of
     '[':rest -> case break (== ']') rest of
-      (h,']':':':p) -> Right (h,p)
+      (h,']':':':p) | length h <= 45, Just _ <- (readMaybe h :: Maybe IPv6) -> Right (h,p)
       _ -> Left "invalid bracketed IPv6 endpoint"
     _ -> case break (== ':') s of
       (h,':':p) | ':' `notElem` h -> Right (h,p)
       _ -> Left "endpoint must be host:port (IPv6: [address]:port)"
   unless (not (null host) && all (\c -> isAscii c && (isAlphaNum c || c `elem` (".-:" :: String))) host) $
     Left "invalid endpoint host"
+  unless (':' `elem` host) $
+    either (const (Left "invalid endpoint host (use DNS A-labels or bracketed IPv6)"))
+      (const (Right ())) (hostName (C.pack host))
   case reads port of
     [(n,"")] | n >= 1 && n <= 65535 && all (`elem` ['0'..'9']) port -> Right (Endpoint host n)
     _ -> Left "port must be 1..65535"

@@ -30,6 +30,18 @@ main=do
       "max_connections 99999 site a { respond x }", "body_limit 999999999 site a { respond x }",
       "site localhost { respond a } tls a b auto_https a@b c", "auto_https a@b c site localhost { respond x }"] $ \bad ->
     check "invalid configuration accepted" (case parseConfig "test" bad of Left _ -> True;Right _ -> False)
+  forM_ [("localhost:8080",Endpoint "localhost" 8080),
+      ("EXAMPLE.org:443",Endpoint "EXAMPLE.org" 443),
+      ("192.0.2.1:80",Endpoint "192.0.2.1" 80),
+      ("[::]:443",Endpoint "::" 443),
+      ("[2001:db8::1]:8443",Endpoint "2001:db8::1" 8443),
+      ("[::ffff:192.0.2.1]:443",Endpoint "::ffff:192.0.2.1" 443)] $ \(raw,expected) ->
+    check "valid endpoint rejected" (parseEndpoint raw == Right expected)
+  forM_ ["[localhost]:443","[127.0.0.1]:443","[:::1]:443","[2001:db8::g]:443",
+      "[1:2:3:4:5:6:7:8:9]:443","[fe80::1%eth0]:443","[v1.example]:443",
+      "bad..example:443","-bad.example:443","bad-.example:443","example.org.:443",
+      replicate 64 'a' ++ ".example:443", "[::1]:0", "[::1]:65536"] $ \raw ->
+    check "invalid endpoint accepted" (case parseEndpoint raw of Left _ -> True; Right _ -> False)
   forM_ ["{\"a\":1,\"a\":2}", "[01]", "[1.]", "{\"a\":true,}", "\"\\ud800\"", "\"\\udc00\"", "[NaN]",
       "\"a\n\"", "[true] trailing", B.replicate 33 91<>B.replicate 33 93] $ \bad ->
     check "invalid JSON accepted" (case J.decode bad of Left _ -> True;Right _ -> False)
@@ -44,7 +56,8 @@ main=do
   second<-either fail pure (Client.parseURL "https://example.org:443/b")
   check "case insensitive HTTPS origin" (Client.sameOrigin first second)
   forM_ ["https://example.org/%", "https://example.org/%xy", "https://user@example.org/a",
-      "https://example.org/#fragment", "https://[::1", "https://example.org?x=%0"] $ \raw ->
+      "https://example.org/#fragment", "https://[::1", "https://example.org?x=%0", "https://[localhost]", "https://[:::1]",
+      "https://bad..example/a"] $ \raw ->
     check "invalid HTTPS URL accepted" (case Client.parseURL raw of Left _ -> True; Right _ -> False)
   delay<-retryDelay [("retry-after","120")]
   check "Retry-After delta" (delay==120)

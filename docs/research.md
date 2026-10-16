@@ -252,3 +252,16 @@ substitution, missing or additional names and non-DNS entries fail closed.
 Renewal rejection preserves active/disk credentials and persists backoff; a
 mismatched cache requires acquisition before HTTPS opens. This is a DNS-only
 issuance consistency policy, separate from client PKIX path verification.
+
+## Endpoint syntax and startup validation (2026-10-16)
+
+[RFC 3986 section 3.2.2](https://www.rfc-editor.org/rfc/rfc3986.html#section-3.2.2)
+distinguishes bracketed IP literals from registered names. The former endpoint
+parser accepted bracketed DNS names and malformed IPv6; CLI checks reported them
+valid and run could create state before failing to bind the HTTP-01 listener.
+The shared parser now uses the retained iproute IPv6 decoder, validates DNS
+label shape/length, and rejects unsupported zone identifiers/IPvFuture. Full CA
+URL validation runs before automatic-mode startup side effects. This is syntax
+validation without DNS lookups or CA contact; the existing listener check still
+requires a numeric local address. Tests cover shared endpoint/URL parsing plus
+real CLI check/run with an occupied HTTP port and no state creation.

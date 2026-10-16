@@ -188,3 +188,11 @@ before listening. `RestrictSUIDSGID` is disabled; NoNewPrivileges, RemoveIPC,
 strict read-only filesystem protection, private state/tmp/devices, capability
 bounds and resource limits remain enabled. There is no unsafe filesystem
 fallback. See [systemd's upstream discussion](https://github.com/systemd/systemd/issues/38711).
+
+- Shared endpoint parsing validates DNS label syntax/length and actual bracketed
+  IPv6 literals (retained iproute decoder, also used by the TLS library). Bracketed
+  DNS/IPv4, malformed IPv6, zone IDs and IPvFuture are rejected. Endpoints require
+  explicit ports; the ACME URL layer supplies its HTTPS default before validation.
+  Automatic-mode run validates the complete CA URL before creating state or
+  binding HTTP-01, matching check. CLI regression uses an occupied HTTP port to
+  prove invalid CA syntax is diagnosed first, with no state directory created.

@@ -156,6 +156,33 @@ class Tests(unittest.TestCase):
                     process.kill()
                 process.communicate(timeout=3)
 
+    def test_invalid_endpoint_checks_and_startup_have_no_side_effects(self):
+        with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
+            directory = pathlib.Path(temporary)
+            with socket.socket() as occupied:
+                occupied.bind(('127.0.0.1', 0)); occupied.listen()
+                config = directory/'Lanternfile'
+                prefix = ('listen 127.0.0.1:8443\n'
+                          'auto_https test@example.com ./private-state\n'
+                          f'acme_http_port {occupied.getsockname()[1]}\n')
+                for endpoint in ['[localhost]:443', '[127.0.0.1]:443', '[:::1]:443',
+                                 'bad..example:443', '-bad.example:443']:
+                    config.write_text(prefix + f'acme_ca https://{endpoint}/directory\n'
+                                      'site example.test { respond "ok" }\n')
+                    for command in ['check', 'run']:
+                        with self.subTest(endpoint=endpoint, command=command):
+                            result = self.invoke(command, directory=directory)
+                            self.assertEqual(result.returncode, 1, result)
+                            self.assertEqual(result.stdout, '')
+                            self.assertIn('endpoint', result.stderr)
+                            self.assertNotIn('Address already in use', result.stderr)
+                            self.assertEqual(list(directory.iterdir()), [config])
+                for endpoint in ['[localhost]:443', '[:::1]:443', 'bad..example:443']:
+                    config.write_text(f'site localhost {{ reverse_proxy https://{endpoint} }}\n')
+                    result = self.invoke('check', directory=directory)
+                    self.assertEqual(result.returncode, 1, result)
+                    self.assertIn('endpoint', result.stderr)
+
     def test_automatic_check_does_not_bind_contact_or_create_state(self):
         with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
             directory = pathlib.Path(temporary)

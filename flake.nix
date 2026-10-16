@@ -69,7 +69,7 @@
       default=pkgs.mkShell {
         packages = [
           ((tls.lib.cryptoPackages pkgs).ghcWithPackages (_: [ http.packages.${system}.default tls.packages.${system}.default
-            pkgs.haskellPackages.async pkgs.haskellPackages.parsec pkgs.haskellPackages.mime-types pkgs.haskellPackages.QuickCheck ]))
+            pkgs.haskellPackages.async pkgs.haskellPackages.parsec pkgs.haskellPackages.mime-types pkgs.haskellPackages.iproute pkgs.haskellPackages.QuickCheck ]))
           pkgs.cabal-install pkgs.openssl pkgs.caddy pkgs.wrk pkgs.strace
           (pkgs.python3.withPackages (p: [ p.cryptography ]))
         ];

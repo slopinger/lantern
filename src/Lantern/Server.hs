@@ -46,14 +46,20 @@ type Registry = MVar (Bool, M.Map ThreadId Socket)
 checkConfig :: FilePath -> IO ()
 checkConfig file = do
   c <- loadConfig file
+  validateACMEURL c
   probeConfinement
   case tlsMode c of
     Automatic{} -> do
-      _ <- either fail pure (parseURL (acmeCA c))
       forM_ (acmeTrust c) (void . TLS.trustFile)
     _ -> pure ()
   _ <- prepare c
   putStrLn "configuration valid"
+
+-- Reject invalid CA endpoints before startup creates state or opens HTTP-01.
+validateACMEURL :: Config -> IO ()
+validateACMEURL cfg = case tlsMode cfg of
+  Automatic{} -> void (either fail pure (parseURL (acmeCA cfg)))
+  _ -> pure ()
 
 prepare :: Config -> IO Snapshot
 prepare c = do
@@ -77,6 +83,7 @@ runServer :: FilePath -> IO ()
 runServer file = do
   hSetBuffering stderr LineBuffering
   cfg <- loadConfig file
+  validateACMEURL cfg
   probeConfinement
   registry <- newMVar (False,M.empty)
   bodyBudget <- newIORef 0
