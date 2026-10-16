@@ -139,8 +139,9 @@ admission and reload rejection. The TLS project tests against real OpenSSL.
 [Benchmarks](benchmarks.md) publish the complete local observations, including the
 fact that Caddy was faster. They are not WAN/TLS measurements or proof of security.
 The server remains experimental: no independent audit, full TLS feature profile,
-formal state-machine proof, coverage-guided fuzz campaign, or boot-tested NixOS
-service is claimed. See [security.md](security.md) for the exact trust boundary.
+formal state-machine proof or coverage-guided fuzz campaign is claimed.
+The NixOS service now has a disposable booted VM check;
+its manual-TLS scope is described in deployment.md. See [security.md](security.md) for the exact trust boundary.
 
 ## HTTPS upstream authentication (2026-10-16)
 

@@ -17,7 +17,7 @@ Build with `nix build`; the result is `result/bin/lantern`. The flake exports
 }
 ```
 
-The module runs as a DynamicUser with a private StateDirectory, strict filesystem
+The module runs as the dedicated unprivileged `lantern` account with a private StateDirectory, strict filesystem
 protection, a 512 MiB memory bound, descriptor/task limits and only the bind-low-port
 capability. Put static data in a readable `/srv` tree; ProtectHome hides home paths.
 Firewall policy is yours to configure; no ports are automatically opened. The
@@ -76,3 +76,32 @@ and reloaded. No Lantern listener or service remains deployed. Private test acco
 and site keys remain under `~/.local/share/lantern-staging/` (0700/0600), outside git.
 The screenshots and public serial summary are in docs/progress. These tests used
 staging only, not publicly trusted production issuance.
+
+## Booted service check
+
+```sh
+nix build .#checks.x86_64-linux.service -L
+```
+
+This boots a disposable NixOS VM using the exported module. It requires KVM on a
+native x86 Linux builder. Synthetic RSA keys are generated inside the guest at
+runtime; no private key enters the Nix store. The fixture checks actual HTTPS
+static-file service as the non-root `lantern` account on port 443, private state/key
+permissions, SIGHUP with the same PID, and clean systemd stop. It also replaces
+the credential source files: reload retains systemd's credential copies, while
+restart loads the new pair. Curl authenticates the expected self-signed test
+certificate and rejects the other one after each rotation boundary.
+
+The guest binds loopback, publishes no host ports, and leaves host services alone.
+This check covers the manual-TLS module path; automatic issuance/renewal remains
+covered separately by the isolated ACME integration fixture. It does not claim a
+production NixOS deployment or an ARM boot test. `nix flake check` includes this
+VM check alongside package, protocol integration and module evaluation.
+
+The module uses a dedicated static system account because systemd's
+`RestrictSUIDSGID` seccomp filter blocks `openat2` with ENOSYS; `DynamicUser`
+forces that filter on. The boot fixture reproduced the old module exiting
+before listening. `RestrictSUIDSGID` is disabled; NoNewPrivileges, RemoveIPC,
+strict read-only filesystem protection, private state/tmp/devices, capability
+bounds and resource limits remain enabled. There is no unsafe filesystem
+fallback. See [systemd's upstream discussion](https://github.com/systemd/systemd/issues/38711).

@@ -100,4 +100,4 @@ probeConfinement = withCString "/" $ \r -> withCString "dev/null" $ \p -> do
   fd <- confinedOpen r p
   if fd >= 0 then closeFd (Fd fd) else do
     err <- getErrno
-    if err == eNOSYS then failHTTP 500 "Linux openat2 support is required" else pure ()
+    if err == eNOSYS then failHTTP 500 "openat2 unavailable: require Linux 5.6+ and a permitting syscall policy" else pure ()

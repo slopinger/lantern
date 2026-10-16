@@ -141,3 +141,19 @@ The TLS PKI helper uses the retained X.509 decoder; no primitives are rewritten.
 The local CA fixture covers incorrect issuance rollback and wrong-name cache
 replacement, plus successful uppercase SAN issuance. This is not full chain trust
 verification of the downloaded certificate.
+
+- nix/service-test.nix boots the actual exported NixOS module in a disposable
+  1 GiB guest (KVM/native builder required). Runtime-only synthetic manual TLS
+  credentials, dedicated-user/low-port TLS, private paths, same-PID reload,
+  LoadCredential source rotation across reload/restart and clean stop are checked
+  with authenticated curl. No host ports/services are changed. Run
+  `nix build .#checks.x86_64-linux.service -L`; flake checks also include it.
+  This is manual-TLS module testing, separate from the local ACME fixture.
+
+The module uses a dedicated static system account because systemd's
+`RestrictSUIDSGID` seccomp filter blocks `openat2` with ENOSYS; `DynamicUser`
+forces that filter on. The boot fixture reproduced the old module exiting
+before listening. `RestrictSUIDSGID` is disabled; NoNewPrivileges, RemoveIPC,
+strict read-only filesystem protection, private state/tmp/devices, capability
+bounds and resource limits remain enabled. There is no unsafe filesystem
+fallback. See [systemd's upstream discussion](https://github.com/systemd/systemd/issues/38711).

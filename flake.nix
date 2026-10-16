@@ -28,6 +28,7 @@
       python=pkgs.python3.withPackages (p: [ p.cryptography ]);
     in {
       inherit package;
+      service = import ./nix/service-test.nix { inherit self pkgs; };
       integration=pkgs.runCommand "lantern-integration" {
         nativeBuildInputs = [ python pkgs.openssl ];
         LANTERN_BIN="${package}/bin/lantern";

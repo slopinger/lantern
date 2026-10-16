@@ -66,8 +66,10 @@ reported to stderr and can eventually cause certificate expiry if not resolved.
 There is no WAF, per-IP rate limiter, disk quota manager, request decompression,
 HTTP/2/3 or application authorization. Defaults bind loopback. A publicly bound
 listener is exposed according to the host network/firewall; the module does not
-change firewall policy. The NixOS service is hardened but has only been evaluated,
-not boot-tested as a full NixOS host here.
+change firewall policy. A disposable NixOS VM check boots the exported hardened
+module and exercises manual TLS, runtime credentials, reload/rotation and stop.
+It does not cover production host migration, ARM boot or automatic HTTPS under
+systemd; ACME has a separate isolated integration fixture.
 
 ## Validation and future work
 
@@ -76,8 +78,8 @@ chunking, forwarding spoof attempts, partial bodies, timeouts, admission exhaust
 concurrent requests, invalid reloads, TLS interoperability and local CA failures.
 Let’s Encrypt staging issuance, cached startup and in-process renewal also passed.
 Benchmarks measure supported paths, not security. Independent review, richer
-coverage-guided fuzzing, formal state-machine work, secret-memory handling and a
-real NixOS service boot test remain before any production-security claim.
+coverage-guided fuzzing, formal state-machine work and secret-memory handling
+remain before any production-security claim.
 
 The TLS client and server support X25519/P-256 ECDHE and a single HelloRetryRequest.
 A retry does not reset the handshake or upstream deadline. Its original hello,
@@ -178,3 +180,11 @@ The TLS PKI helper uses the retained X.509 decoder; no primitives are rewritten.
 The local CA fixture covers incorrect issuance rollback and wrong-name cache
 replacement, plus successful uppercase SAN issuance. This is not full chain trust
 verification of the downloaded certificate.
+
+The module uses a dedicated static system account because systemd's
+`RestrictSUIDSGID` seccomp filter blocks `openat2` with ENOSYS; `DynamicUser`
+forces that filter on. The boot fixture reproduced the old module exiting
+before listening. `RestrictSUIDSGID` is disabled; NoNewPrivileges, RemoveIPC,
+strict read-only filesystem protection, private state/tmp/devices, capability
+bounds and resource limits remain enabled. There is no unsafe filesystem
+fallback. See [systemd's upstream discussion](https://github.com/systemd/systemd/issues/38711).

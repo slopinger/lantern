@@ -192,7 +192,10 @@ python test/benchmark.py --lantern ./result/bin/lantern --out benchmark.json
 
 `nix flake check` builds the package, runs configuration/JSON properties, isolated
 HTTP/TLS/file-race/deadline/admission/proxy/reload tests, and a disposable ACME CA
-that verifies JWS/CSRs and fetches the real HTTP-01 endpoint. Its issuance,
+that verifies JWS/CSRs and fetches the real HTTP-01 endpoint. A disposable NixOS VM
+also boots the exported service module and verifies runtime credentials, low-port
+TLS, unprivileged startup, reload, rotation and clean stop; a native KVM builder
+is required. Its issuance,
 restart, renewal, failure preservation, and backoff checks need no internet or
 live service. Library checks add 11,000 HTTP wire/representation properties, 3,000 TLS record properties,
 known answers, and real OpenSSL interoperability. x86_64-linux is tested here;

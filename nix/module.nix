@@ -25,6 +25,8 @@ in {
     };
   };
   config=lib.mkIf cfg.enable {
+    users.groups.lantern = {};
+    users.users.lantern = { isSystemUser = true; group = "lantern"; };
     assertions=[ {
       assertion=lib.all (lib.hasPrefix "/") (builtins.attrValues cfg.credentials);
       message="services.lantern.credentials must contain absolute runtime path strings.";
@@ -38,7 +40,8 @@ in {
         ExecStart="${lib.getExe cfg.package} run ${file}";
         ExecReload="${pkgs.util-linux}/bin/kill -HUP $MAINPID";
         Type="simple";
-        DynamicUser=true;
+        User="lantern";
+        Group="lantern";
         StateDirectory="lantern";
         StateDirectoryMode="0700";
         WorkingDirectory="/var/lib/lantern";
@@ -47,6 +50,7 @@ in {
         RestartSec="5min";
         TimeoutStopSec="15s";
         UMask="0077";
+        RemoveIPC=true;
         NoNewPrivileges=true;
         PrivateTmp=true;
         PrivateDevices=true;
@@ -56,7 +60,9 @@ in {
         ProtectKernelModules=true;
         ProtectKernelLogs=true;
         ProtectControlGroups=true;
-        RestrictSUIDSGID=true;
+        # This seccomp filter blocks openat2 with ENOSYS. DynamicUser also
+        # forces it on, so use a dedicated account and retain NoNewPrivileges.
+        RestrictSUIDSGID=false;
         LockPersonality=true;
         SystemCallArchitectures="native";
         RestrictAddressFamilies=[ "AF_INET" "AF_INET6" "AF_UNIX" ];
