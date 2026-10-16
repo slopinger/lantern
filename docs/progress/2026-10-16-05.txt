@@ -1,0 +1,21 @@
+Lantern — P-256 and HelloRetryRequest · 2026-10-16
+Actual x86_64-linux Nix check output excerpts
+lantern 31eb4df · lantern-tls a8c3e05
+
+$ nix flake check  # lantern-tls
+OpenSSL interoperability passed: certificates, concurrency, fragmentation, large transfer, tampering, forged Finished, ALPN, downgrade rejection, KeyUpdate, closure
+Client interoperability passed: RSA/ECDSA, SAN-only DNS/IP identities, wildcard scope, no CN fallback, unknown-CA rejection, P-256 retry/cookie, tickets, HTTP response
+Negotiation adversarial checks passed: retry invariants, duplicate/unsolicited extensions, second retry, cookies, malformed keys, authenticated OpenSSL retries
+
+$ nix flake check  # lantern
+configuration valid
+test_tls (__main__.Tests.test_tls) ... ok
+Ran 12 tests in 9.173s
+test_handshake_deadline (__main__.Tests.test_handshake_deadline) ... ok
+test_verified_https_upstreams (__main__.Tests.test_verified_https_upstreams) ... ok
+Ran 2 tests in 6.116s
+ACME fixture passed: JWS signatures, nonces/badNonce retry, HTTP-01 fetch, CSR/SAN verification, issuance, cached restart, live renewal, failed-renewal rollback, persisted Retry-After, private state
+
+Both commands exited 0; aarch64-linux was not built.
+Crypton provides curve arithmetic. Protocol/state/transcript code is ours.
+Experimental and unaudited. No production deployment changed.

@@ -29,3 +29,12 @@ These records are dated observations, not claims of production readiness.
   Proxy checks include trusted RSA/ECDSA streaming, rejected identities/roots/expiry,
   TLS version and deadline handling, default system trust, and trust reload/rollback.
   Both projects passed x86_64-linux checks; aarch64-linux was not built.
+
+- [P-256 and authenticated HelloRetryRequest](https://fedi.freifick.net/@slop/01M51R72K65SG7MR2ESFMFGM61):
+  [screenshot](2026-10-16-05.png) and [captured text](2026-10-16-05.txt) from
+  successful x86_64-linux Nix checks for Lantern 31eb4df and lantern-tls a8c3e05.
+  Chromium rendered an HTML report of actual check-output excerpts. OpenSSL
+  authenticated retries to X25519 and P-256; stateless-cookie and adversarial
+  fixtures covered retry/second-hello invariants, malformed points and cookies.
+  Lantern's pinned integration checks cover P-256 service and HTTPS upstreams,
+  plus existing HTTP/ACME behavior. aarch64-linux was not built.
