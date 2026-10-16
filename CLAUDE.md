@@ -58,3 +58,12 @@
   test/path_encoding_test.py exercises exact Unicode paths and hidden/dot-prefix
   non-aliasing under a C-locale child server, including Unicode config/root paths.
   CLI/config loading fixes filesystem encoding to UTF-8. NUL bytes remain rejected.
+
+- Confined directory observations return Nothing from withFileBelow; regular
+  callbacks return Just. Redirect nonslash GET/HEAD URLs with directoryRedirect,
+  preserving escaped path/query and adding a literal slash. Slash requests still
+  select index.html, which must be regular; never redirect an invalid index loop.
+- EACCES may trigger a same-policy O_PATH directory probe for search-only dirs.
+  It does not read regular files or follow symlinks. All probe descriptors close.
+- Static tests include directory canonicalization, relative assets, query/Unicode/
+  encoded-slash cases, HEAD reuse, descriptor cleanup and directory symlink races.

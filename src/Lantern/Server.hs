@@ -307,8 +307,16 @@ dispatch cfg roots cache site req body peer _transport isHead closeAfter headOut
     Root root -> do
       unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "static files require GET or HEAD"
       relative <- either (const (failHTTP 400 "unsafe path")) pure (pathFromTarget (reqTarget req))
-      let serve = withFileBelow root relative $ \h status ->
-            serveStatic cache req relative extra h status isHead closeAfter headOut send
+      let serve = do
+            result <- withFileBelow root relative $ \h status ->
+              serveStatic cache req relative extra h status isHead closeAfter headOut send
+            case result of
+              Just () -> pure ()
+              Nothing -> case directoryRedirect (reqTarget req) of
+                Nothing -> failHTTP 404 "directory index is not a regular file"
+                Just location -> simple headOut send isHead closeAfter 308
+                  (("location",location):filter (\(key,_) -> key `notElem`
+                    ["location","content-type","content-encoding","content-language","content-location"]) extra) "redirecting\n"
       serve `catch` \(e :: IOException) ->
         if isDoesNotExistError e || isPermissionError e then failHTTP 404 "file not found" else throwIO e
     Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send

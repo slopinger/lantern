@@ -200,3 +200,26 @@ Tests also cover enormous decimals, empty files, conditional precedence, repeate
 requests after 304/multipart, same-size/same-mtime atomic replacement, confinement,
 concurrent replacement and verified TLS ranges. These checks do not authorize
 in-place mutation of a published file or prove metadata tags collision-free.
+
+## Directory URL canonicalization (2026-10-16)
+
+[RFC 9110 section 15.4.9](https://datatracker.ietf.org/doc/html/rfc9110#section-15.4.9)
+provides the permanent-redirect semantics. A literal trailing slash is needed for
+browser relative-link resolution, even if a decoded path already ends in an encoded
+slash. Lantern adds it to the original escaped path, before its unchanged query.
+The generated Location has no authority and never uses a client-supplied host.
+
+The directory decision comes from an openat2-confined descriptor. An O_PATH probe
+for a search-only directory keeps the same confinement flags; the
+[Linux openat2 manual](https://man7.org/linux/man-pages/man2/openat2.2.html) describes
+that policy's path-resolution guarantees. No extra directory lookup is added to a
+successful ordinary-file request. The directory descriptor is closed before the
+redirect, and a subsequent slash request independently opens its regular index
+under the same policy. No directory listing or unsafe path fallback was added.
+
+During Unicode testing, the C locale exposed a locale-dependent FFI conversion
+that could discard characters after path validation and alias a hidden filename.
+The separately verified UTF-8 fix pins filesystem encoding at CLI/config startup
+and passes explicit UTF-8 bytes to the shim. Synthetic C-locale tests verify exact
+Unicode names/config/roots and prevent hidden/dot-prefix aliases. Directory tests
+also check actual relative-asset requests, canonical HEAD framing and race behavior.

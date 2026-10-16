@@ -100,6 +100,10 @@ support HTTP/1.1 keep-alive and pipelining. HTTP/1.0 has a strict limited profil
 | `proxy_ca_bundle FILE` | Trust roots for all HTTPS upstreams; default system trust |
 
 Static files stream in 64 KiB pieces. `/` and `/directory/` select `index.html`.
+An existing directory requested without a literal trailing slash returns 308 to
+its slash URL, preserving escaped path bytes and the query. GET/HEAD redirects are
+origin-relative and need no configured host/scheme. Search-only directories with
+readable indexes work too. Missing/nonregular indexes remain 404; there is no listing.
 There is no directory listing, hidden-file serving, or symlink following. Linux
 `openat2` confines the open itself below the configured root, including during
 symlink replacement races. Publish into operator-controlled roots with atomic
@@ -138,7 +142,7 @@ no implicit proxies, redirects, pooled connections, or request retries. A global
 64 MiB reservation budget bounds concurrent request-body memory; excess body
 requests get 503. Known upstream responses over 1 GiB are rejected before headers.
 
-Not included: HTTP/2/3, WebSockets/CONNECT, compression, directory-slash redirects, wildcard hosts, DNS-01,
+Not included: HTTP/2/3, WebSockets/CONNECT, compression, wildcard hosts, DNS-01,
 external-account binding, ACME revocation/account rotation, or configurable route
 matchers. This is not a complete Caddy replacement.
 

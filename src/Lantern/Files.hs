@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Lantern.Files (withFileBelow, pathFromTarget, probeConfinement) where
+module Lantern.Files (withFileBelow, pathFromTarget, directoryRedirect, probeConfinement) where
 import Control.Exception (bracket, onException)
 import Control.Monad (unless)
 import qualified Data.ByteString as B
@@ -9,7 +9,7 @@ import qualified Data.Text as T
 import qualified Data.Text.Encoding as TE
 import Foreign.C.String (CString, withCString)
 import Foreign.C.Types (CInt(..))
-import Foreign.C.Error (getErrno, eNOSYS, eMFILE, eNFILE, throwErrno)
+import Foreign.C.Error (getErrno, eNOSYS, eMFILE, eNFILE, eISDIR, throwErrno)
 import System.IO (Handle, hClose, hSetBinaryMode)
 import System.Posix.IO (fdToHandle, closeFd)
 import System.Posix.Files (FileStatus, getFdStatus)
@@ -27,7 +27,7 @@ pathFromTarget target = do
   let parts = T.splitOn "/" text
   unless (all safe parts) $ Left "unsafe path component"
   let p = T.unpack (T.intercalate "/" (drop 1 parts))
-  pure (if null p || last p == '/' then p ++ "index.html" else p)
+  pure (if B.isSuffixOf "/" raw then p ++ "index.html" else p)
   where
     safe p = p /= "." && p /= ".." && not ("." `T.isPrefixOf` p) &&
       not (T.any (\c -> c < ' ' || c == '\DEL' || c == '\\' || c == '\0') p)
@@ -43,20 +43,33 @@ pathFromTarget target = do
           | c >= 97 && c <= 102 = Just (c-87)
           | otherwise = Nothing
 
-withFileBelow :: FilePath -> FilePath -> (Handle -> FileStatus -> IO a) -> IO a
-withFileBelow root relative action = bracket acquire (hClose . fst) (uncurry action)
+-- A directory redirect preserves the original escaped path/query. It must stay
+-- an origin-relative URI, including if used independently of the HTTP parser.
+directoryRedirect :: B.ByteString -> Maybe B.ByteString
+directoryRedirect target
+  | B.null path || B.take 1 path /= "/" || "//" `B.isPrefixOf` path || B.isSuffixOf "/" path = Nothing
+  | not (B.all (\c -> c>32 && c<127 && c/=35 && c/=92) target) = Nothing
+  | otherwise = Just (path<>"/"<>query)
+  where (path,query)=C.break (=='?') target
+
+-- Nothing means the confined open observed a directory, not a regular file.
+-- Its descriptor is closed by the shim; only regular descriptors become handles.
+withFileBelow :: FilePath -> FilePath -> (Handle -> FileStatus -> IO a) -> IO (Maybe a)
+withFileBelow root relative action = bracket acquire (maybe (pure ()) (hClose . fst)) $
+  maybe (pure Nothing) (\(h,status) -> Just <$> action h status)
   where
     acquire = withUTF8Path root $ \r -> withUTF8Path relative $ \p -> do
       raw <- confinedOpen r p
-      whenInvalid raw
-      let fd=Fd raw
-      status <- getFdStatus fd `onException` closeFd fd
-      h <- fdToHandle fd `onException` closeFd fd
-      hSetBinaryMode h True `onException` hClose h
-      pure (h,status)
-    whenInvalid raw = if raw >= 0 then pure () else do
+      if raw<0 then openFailure else do
+        let fd=Fd raw
+        status <- getFdStatus fd `onException` closeFd fd
+        h <- fdToHandle fd `onException` closeFd fd
+        hSetBinaryMode h True `onException` hClose h
+        pure (Just (h,status))
+    openFailure = do
       err <- getErrno
-      if err == eMFILE || err == eNFILE then failHTTP 503 "file descriptor limit"
+      if err==eISDIR then pure Nothing
+        else if err == eMFILE || err == eNFILE then failHTTP 503 "file descriptor limit"
         else if err == eNOSYS then throwErrno "openat2 unavailable"
         else failHTTP 404 "file not found"
 

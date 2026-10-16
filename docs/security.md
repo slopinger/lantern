@@ -115,3 +115,18 @@ reading arguments/files, and the shim boundary encodes UTF-8 explicitly with NUL
 rejection. A C-locale loopback
 regression checks exact Unicode filenames and hidden/dot-prefix non-aliasing using
 synthetic files. Confinement remains kernel-enforced for the exact encoded bytes.
+
+Directory canonicalization uses the confined descriptor's type rather than a
+separate path-stat lookup. The shim closes observed directories and reports a
+directory result; only regular files become streaming handles. A search-only
+directory may be detected with O_PATH after EACCES, retaining the same openat2
+BENEATH/NO_SYMLINKS/NO_MAGICLINKS policy. Neither ordinary file permission failures
+nor symlinks become readable through this probe.
+
+Redirect locations preserve original escaped path/query bytes, insert a literal
+slash before the query, and stay origin-relative. They contain no request-derived
+scheme/authority. Directory indexes that are directories or symlinks return 404
+instead of creating redirect loops or following links. HEAD redirects are bodyless;
+range/conditional headers do not override the ordinary redirect decision. Tests
+cover encoded separators, Unicode, queries, relative assets, search-only directories,
+reused connections, repeated directory descriptor cleanup, and symlink-swap races.

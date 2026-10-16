@@ -13,6 +13,7 @@ import tempfile
 import threading
 import time
 import unittest
+import urllib.parse
 from http_test import Running, free_port
 
 
@@ -137,6 +138,117 @@ site encoded.local {{ root public header Content-Encoding gzip }}
             self.assertEqual(connection.getresponse().read(), b'hello conditional')
         finally:
             connection.close()
+
+    def test_directory_canonicalization_and_relative_assets(self):
+        for name in ['guide', 'space dir', 'unicode-ä']:
+            folder = self.root/name
+            folder.mkdir()
+            (folder/'index.html').write_text('<link rel="stylesheet" href="style.css">directory index')
+            (folder/'style.css').write_text('body { color: green; }')
+        for path in ['/guide', '/%67uide', '/space%20dir', '/unicode-%C3%A4', '/guide%2f']:
+            for query in ['', '?x=1&next=%2f%2fevil.test', '?']:
+                with self.subTest(path=path, query=query):
+                    status, headers, _ = self.server.request(path+query)
+                    self.assertEqual(status, 308)
+                    self.assertEqual(headers['location'], path+'/'+query)
+                    absolute = urllib.parse.urljoin('https://localhost'+path+query, headers['location'])
+                    self.assertEqual(urllib.parse.urlsplit(absolute).netloc, 'localhost')
+                    target = urllib.parse.urlsplit(absolute)
+                    response = self.server.request(target.path+('?' + target.query if target.query else ''))
+                    self.assertEqual(response[0], 200)
+                    asset = urllib.parse.urlsplit(urllib.parse.urljoin(absolute, 'style.css'))
+                    self.assertEqual(self.server.request(asset.path)[2], b'body { color: green; }')
+        status, headers, body = self.server.request('/guide?x=1', method='HEAD')
+        self.assertEqual((status, headers['location'], body), (308, '/guide/?x=1', b''))
+        self.assertEqual(self.server.request('/guide', headers={'If-None-Match': '*', 'Range': 'bytes=0-1'})[0], 308)
+        self.assertEqual(self.server.request('/guide', method='POST')[0], 405)
+        self.assertEqual(self.server.request('/missing')[0], 404)
+        search_only = self.root/'search-only'
+        search_only.mkdir(); (search_only/'index.html').write_text('searchable directory index')
+        search_only.chmod(0o111)
+        try:
+            for _ in range(20):
+                self.assertEqual(self.server.request('/search-only')[0], 308)
+            self.assertEqual(self.server.request('/search-only/')[2], b'searchable directory index')
+        finally:
+            search_only.chmod(0o755)
+        (self.root/'no-index').mkdir()
+        self.assertEqual(self.server.request('/no-index')[0], 308)
+        self.assertEqual(self.server.request('/no-index/')[0], 404)
+        (self.root/'bad-index').mkdir()
+        (self.root/'bad-index'/'index.html').mkdir()
+        self.assertEqual(self.server.request('/bad-index/')[0], 404, 'directory index must not create a redirect loop')
+        outside = self.directory/'outside-directory'
+        outside.mkdir(); (outside/'index.html').write_text('private directory bytes')
+        (self.root/'escape-directory').symlink_to(outside, target_is_directory=True)
+        (self.root/'linked-index').mkdir()
+        (self.root/'linked-index'/'index.html').symlink_to(outside/'index.html')
+        for path in ['/escape-directory', '/escape-directory/', '/linked-index/', '/%2fguide', '//guide']:
+            status, headers, body = self.server.request(path)
+            self.assertIn(status, [400, 404])
+            self.assertNotIn('location', headers)
+            self.assertNotIn(b'private directory bytes', body)
+        # A redirect under a configured Content-Encoding is itself plain text.
+        status, headers, _ = self.server.request('/guide', host='encoded.local')
+        self.assertEqual(status, 308)
+        self.assertNotIn('content-encoding', headers)
+        # Reused connections catch an accidental body on a HEAD redirect.
+        connection = http.client.HTTPConnection('127.0.0.1', self.server.port, timeout=4)
+        try:
+            connection.request('HEAD', '/guide', headers={'Host': 'localhost'})
+            response = connection.getresponse()
+            self.assertEqual((response.status, response.read()), (308, b''))
+            connection.request('GET', '/guide/', headers={'Host': 'localhost'})
+            self.assertEqual(connection.getresponse().status, 200)
+        finally:
+            connection.close()
+        # Repeated directory observations must not retain the shim's descriptors.
+        before = len(list(pathlib.Path(f'/proc/{self.server.proc.pid}/fd').iterdir()))
+        for _ in range(200):
+            self.assertEqual(self.server.request('/guide')[0], 308)
+        for _ in range(100):
+            after = len(list(pathlib.Path(f'/proc/{self.server.proc.pid}/fd').iterdir()))
+            if after <= before+2:
+                break
+            time.sleep(.02)
+        self.assertLessEqual(after, before+2, 'directory detection leaked descriptors')
+
+    def test_directory_symlink_replacement_race(self):
+        public = self.root/'rotating-directory'
+        public.mkdir(); (public/'index.html').write_text('safe directory')
+        holding = self.root/'.holding-directory'
+        outside = self.directory/'private-directory'
+        outside.mkdir(); (outside/'index.html').write_text('private directory bytes')
+        stopped = threading.Event()
+        errors = []
+        def rotate():
+            try:
+                while not stopped.is_set():
+                    public.rename(holding)
+                    public.symlink_to(outside, target_is_directory=True)
+                    public.unlink()
+                    holding.rename(public)
+            except Exception as error:
+                errors.append(error)
+            finally:
+                if public.is_symlink(): public.unlink()
+                if holding.exists(): holding.rename(public)
+        worker = threading.Thread(target=rotate, daemon=True); worker.start()
+        try:
+            for _ in range(100):
+                status, headers, body = self.server.request('/rotating-directory')
+                self.assertIn(status, [308, 404])
+                if status == 308:
+                    self.assertEqual(headers['location'], '/rotating-directory/')
+                self.assertNotIn(b'private directory bytes', body)
+                status, _, body = self.server.request('/rotating-directory/')
+                self.assertIn(status, [200, 404])
+                if status == 200: self.assertEqual(body, b'safe directory')
+                self.assertNotIn(b'private directory bytes', body)
+        finally:
+            stopped.set(); worker.join(timeout=2)
+        self.assertFalse(worker.is_alive())
+        self.assertFalse(errors, errors)
 
     def test_date_refreshes_on_repeated_cached_responses(self):
         first = self.server.request(method='HEAD')[1]['date']
