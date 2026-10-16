@@ -11,6 +11,7 @@ import ssl
 import subprocess
 import tempfile
 import threading
+import time
 import unittest
 from http_test import Running, free_port
 
@@ -137,6 +138,18 @@ site encoded.local {{ root public header Content-Encoding gzip }}
         finally:
             connection.close()
 
+    def test_date_refreshes_on_repeated_cached_responses(self):
+        first = self.server.request(method='HEAD')[1]['date']
+        for _ in range(100):
+            metadata = self.server.request(method='HEAD')[1]
+            self.assertLessEqual(email.utils.parsedate_to_datetime(metadata['last-modified']),
+                                 email.utils.parsedate_to_datetime(metadata['date']))
+            if metadata['date'] != first:
+                break
+            time.sleep(.03)
+        else:
+            self.fail('Date header stayed frozen on repeated static responses')
+
     def test_verified_tls_ranges_and_conditional_reuse(self):
         self.server.close()
         cert, key = self.directory/'cert.pem', self.directory/'key.pem'
@@ -173,9 +186,15 @@ site encoded.local {{ root public header Content-Encoding gzip }}
         status, headers, body = self.server.request(headers={'If-None-Match': original})
         self.assertEqual((status, body), (200, b'newer conditional'))
         self.assertNotEqual(headers['etag'], original)
+        cached = self.root/'cached'
+        cached.write_bytes(b'previously public')
+        previous = self.server.request('/cached')[1]['etag']
         outside = self.directory/'outside'
         outside.write_text('private bytes')
         (self.root/'escape').symlink_to(outside)
+        cached.unlink(); cached.symlink_to(outside)
+        self.assertEqual(self.server.request('/cached', headers={'If-None-Match': previous})[0], 404,
+                         'cached validators must not bypass a new confined open')
         for path in ['/escape', '/%2e%2e/outside']:
             self.assertIn(self.server.request(path, headers={'Range': 'bytes=0-1'})[0], [400, 404])
         target = self.root/'rotating'

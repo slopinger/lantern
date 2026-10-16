@@ -46,3 +46,9 @@
   numeric bounds, confined ranges and atomic metadata/body publication races.
 - Benchmark --conditional also measures each server's own verified ETag/304 path;
   response_body_bytes distinguishes avoided file bytes from delivered bytes.
+
+- A StaticCache in each routing snapshot holds at most 256 derived metadata entries
+  plus a Date value per UTC second; every hit still follows confined open/fstat.
+  No file bytes/FDs are cached. Keys include inode/device, size, high-res mtime/ctime,
+  media/config headers (no retained URI spellings). Reloads start fresh; ACME credential renewal preserves
+  the current cache/routes. Do not infer stronger ETag guarantees from caching.

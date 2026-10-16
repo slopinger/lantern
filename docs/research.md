@@ -184,7 +184,7 @@ The independent HTTP library now owns entity-tag/date parsing, precondition orde
 range normalization and multipart lengths, informed by
 [RFC 9110 sections 8.8, 13, 14 and 15.3.7](https://www.rfc-editor.org/rfc/rfc9110.html).
 Lantern obtains metadata from the same confined descriptor it streams, not from
-an independent path lookup. Weak tags hash metadata, route/header identity and
+an independent path lookup. Weak tags hash metadata, representation headers and
 file identity with Crypton's SHA-256 primitive; this is not a file-content hash.
 It avoids pre-reading a large file, and intentionally never supplies strong
 If-Range evidence. Last-Modified is clamped to the response's current time.

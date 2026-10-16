@@ -12,11 +12,10 @@ import Data.List (find)
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import Data.Time.Clock
-import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime, POSIXTime)
 import Crypto.Random (getRandomBytes)
 import Numeric (showHex)
 import qualified System.Posix.Files as F
-import Data.Time.Format
 import Network.Mime (defaultMimeLookup)
 import Network.Socket hiding (listen)
 import Lantern.TLS (Credentials)
@@ -35,7 +34,13 @@ import qualified Lantern.TLS as TLS
 import qualified Lantern.ACME as ACME
 
 -- One immutable snapshot per request. No routing lookup races during reload.
-data Snapshot = Snapshot Config (Maybe Credentials) (Maybe TLS.TrustStore)
+data Snapshot = Snapshot Config (Maybe Credentials) (Maybe TLS.TrustStore) StaticCache
+type StaticIdentity = (Integer,Integer,Integer,POSIXTime,POSIXTime,B.ByteString,Headers)
+data StaticCache = StaticCache
+  (IORef (M.Map StaticIdentity (R.EntityTag,B.ByteString)))
+  (IORef (Maybe (Integer,B.ByteString)))
+newStaticCache :: IO StaticCache
+newStaticCache=StaticCache <$> newIORef M.empty <*> newIORef Nothing
 type Registry = MVar (Bool, M.Map ThreadId Socket)
 
 checkConfig :: FilePath -> IO ()
@@ -57,7 +62,8 @@ prepare c = do
     Manual cert key -> Just <$> loadCredentials cert key
     Automatic{} -> ACME.cachedCredentials c
   trust <- prepareProxyTrust c
-  pure (Snapshot c creds trust)
+  cache <- newStaticCache
+  pure (Snapshot c creds trust cache)
 
 prepareProxyTrust :: Config -> IO (Maybe TLS.TrustStore)
 prepareProxyTrust c
@@ -75,7 +81,8 @@ runServer file = do
   registry <- newMVar (False,M.empty)
   bodyBudget <- newIORef 0
   trust <- prepareProxyTrust cfg
-  state <- newIORef (Snapshot cfg Nothing trust)
+  cache <- newStaticCache
+  state <- newIORef (Snapshot cfg Nothing trust cache)
   case tlsMode cfg of
     Automatic{} -> ACME.withStateLock cfg $ do
       challenges <- ACME.newChallenges
@@ -89,7 +96,7 @@ runServer file = do
             Nothing -> do
               hPutStrLn stderr "ACME: acquiring initial certificate"
               ACME.acquire cfg challenges
-          atomicWriteIORef state (Snapshot cfg (Just creds) trust)
+          atomicWriteIORef state (Snapshot cfg (Just creds) trust cache)
           renewNow <- newEmptyMVar
           withAsync (renewCertificates cfg challenges state renewNow) $ \renewWorker -> do
             link renewWorker
@@ -130,7 +137,7 @@ renewCertificates cfg challenges state queue = loop False
         when (due || force) $ do
           hPutStrLn stderr "ACME: renewing certificate"
           credentials <- ACME.acquire cfg challenges
-          atomicModifyIORef' state (\(Snapshot current _ roots) -> (Snapshot current (Just credentials) roots,()))
+          atomicModifyIORef' state (\(Snapshot current _ roots cache) -> (Snapshot current (Just credentials) roots cache,()))
           hPutStrLn stderr "ACME: renewed certificate activated"
       delay <- case result of
         Left (e :: SomeException) -> case fromException e :: Maybe AsyncException of
@@ -175,12 +182,12 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
       let cleanup = close socket' `finally` modifyMVar_ registry (\(s,m) -> pure (s,M.delete self m))
           task = do
             setSocketOption socket' NoDelay 1
-            Snapshot _ creds _ <- readIORef state
+            Snapshot _ creds _ _ <- readIORef state
             transport <- case (challenges,creds) of
               (Just _,_) -> pure (plainTransport socket')
               (_,Nothing) -> pure (plainTransport socket')
               (_,Just _) -> tlsTransport (do
-                Snapshot _ c _ <- readIORef state
+                Snapshot _ c _ _ <- readIORef state
                 maybe (fail "missing TLS credentials") pure c) socket'
             serveConnection cfg state peer transport challenges bodyBudget `finally` finish transport
       (unmask task `catch` quietConnection) `finally` cleanup
@@ -228,12 +235,12 @@ serveConnection limits state peer transport challenges bodyBudget = do
               [v] | lower v == "100-continue" && reqVersion req == "HTTP/1.1" -> send "HTTP/1.1 100 Continue\r\n\r\n"
               _ -> failHTTP 417 "unsupported expectation"
             body <- deadline (bodySeconds limits) 408 (collectBody reader (reqFraming req) (bodyLimit limits))
-            Snapshot current _ roots <- readIORef state
+            Snapshot current _ roots cache <- readIORef state
             host <- either (const (failHTTP 400 "invalid Host")) pure (requestHost hs)
             site <- maybe (failHTTP 421 "unknown host") pure (find ((==host) . siteHost) (sites current))
             case challenges of
               Nothing -> let code=case siteAction site of Proxy{} -> 504; _ -> 408
-                         in deadline (writeSeconds limits) code (dispatch current roots site req body peer transport isHead closeAfter headOut send)
+                         in deadline (writeSeconds limits) code (dispatch current roots cache site req body peer transport isHead closeAfter headOut send)
               Just table -> do
                 unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "HTTP-01 requires GET or HEAD"
                 answer <- ACME.challengeResponse table host (reqTarget req)
@@ -276,9 +283,11 @@ type Send = B.ByteString -> IO ()
 common :: Bool -> Headers -> IO Headers
 common closeAfter hs = do
   now <- getCurrentTime
-  pure (("date", C.pack (formatTime defaultTimeLocale "%a, %d %b %Y %H:%M:%S GMT" now)) :
-    ("server","lantern") : ("connection",if closeAfter then "close" else "keep-alive") :
-    ("x-content-type-options","nosniff") : hs)
+  pure (commonFields (R.formatHTTPDate now) closeAfter hs)
+commonFields :: B.ByteString -> Bool -> Headers -> Headers
+commonFields date closeAfter hs = ("date",date) :
+  ("server","lantern") : ("connection",if closeAfter then "close" else "keep-alive") :
+  ("x-content-type-options","nosniff") : hs
 
 mergeDefaults :: Headers -> Headers -> Headers
 mergeDefaults defaults extras=filter (\(k,_) -> k `notElem` map fst extras) defaults ++ extras
@@ -290,8 +299,8 @@ simple headOut send isHead closeAfter status hs body = do
   headOut status headers
   unless isHead (send body)
 
-dispatch :: Config -> Maybe TLS.TrustStore -> Site -> Request -> B.ByteString -> SockAddr -> Transport -> Bool -> Bool -> HeadOut -> Send -> IO ()
-dispatch cfg roots site req body peer _transport isHead closeAfter headOut send =
+dispatch :: Config -> Maybe TLS.TrustStore -> StaticCache -> Site -> Request -> B.ByteString -> SockAddr -> Transport -> Bool -> Bool -> HeadOut -> Send -> IO ()
+dispatch cfg roots cache site req body peer _transport isHead closeAfter headOut send =
   case siteAction site of
     Respond text -> simple headOut send isHead closeAfter 200 extra text
     Redirect url -> simple headOut send isHead closeAfter 308 (("location",url):extra) "redirecting\n"
@@ -299,7 +308,7 @@ dispatch cfg roots site req body peer _transport isHead closeAfter headOut send 
       unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "static files require GET or HEAD"
       relative <- either (const (failHTTP 400 "unsafe path")) pure (pathFromTarget (reqTarget req))
       let serve = withFileBelow root relative $ \h status ->
-            serveStatic req relative extra h status isHead closeAfter headOut send
+            serveStatic cache req relative extra h status isHead closeAfter headOut send
       serve `catch` \(e :: IOException) ->
         if isDoesNotExistError e || isPermissionError e then failHTTP 404 "file not found" else throwIO e
     Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send
@@ -308,25 +317,23 @@ dispatch cfg roots site req body peer _transport isHead closeAfter headOut send 
 
 -- Metadata and body come from the same confined descriptor. Atomic publication
 -- keeps an open representation stable; an in-place truncation still poisons I/O.
-serveStatic :: Request -> FilePath -> Headers -> Handle -> F.FileStatus -> Bool -> Bool -> HeadOut -> Send -> IO ()
-serveStatic req relative extra handle status isHead closeAfter headOut send = do
+serveStatic :: StaticCache -> Request -> FilePath -> Headers -> Handle -> F.FileStatus -> Bool -> Bool -> HeadOut -> Send -> IO ()
+serveStatic cache req relative extra file status isHead closeAfter headOut send = do
   now <- getCurrentTime
   let size=fromIntegral (F.fileSize status)
       seconds=min (floor (F.modificationTimeHiRes status)) (floor (utcTimeToPOSIXSeconds now)) :: Integer
       modified=posixSecondsToUTCTime (fromInteger seconds)
-      identity=C.pack (show (F.deviceID status,F.fileID status,F.fileSize status,
-        F.modificationTimeHiRes status,F.statusChangeTimeHiRes status,relative,contentType,extra))
-      tag=R.Weak (hexBytes (Crypto.sha256 identity))
-      validators=R.Validators (Just tag) (Just modified) False
-      encoded=header "content-encoding" extra /= Nothing
-      metadata=[("etag",R.renderEntityTag tag),("last-modified",R.formatHTTPDate modified),
-                ("accept-ranges",if encoded then "none" else "bytes")]
       contentType=maybe (defaultMimeLookup (T.pack relative)) id (header "content-type" extra)
+  (tag,cachedModified,date) <- cachedStaticFields cache now status contentType extra
+  let validators=R.Validators (Just tag) (Just modified) False
+      encoded=header "content-encoding" extra /= Nothing
+      metadata=[("etag",R.renderEntityTag tag),("last-modified",if F.modificationTimeHiRes status>utcTimeToPOSIXSeconds now then R.formatHTTPDate modified else cachedModified),
+                ("accept-ranges",if encoded then "none" else "bytes")]
       other=filter ((/="content-type") . fst) extra
       output code fields=let selected=if code `elem` [412,416]
                                then filter (\(key,_) -> key `notElem` ["content-encoding","content-language","content-location"]) other
                                else other
-                         in common closeAfter (metadata++fields++selected) >>= headOut code
+                         in headOut code (commonFields date closeAfter (metadata++fields++selected))
       errorResponse code fields body=do
         output code (("content-length",C.pack (show (B.length body))):("content-type","text/plain; charset=utf-8"):fields)
         unless isHead (send body)
@@ -337,7 +344,7 @@ serveStatic req relative extra handle status isHead closeAfter headOut send = do
     R.Proceed -> case if encoded then R.FullRepresentation else R.selectRanges now (reqMethod req) (reqHeaders req) validators size of
       R.FullRepresentation -> do
         output 200 [("content-length",C.pack (show size)),("content-type",contentType)]
-        unless isHead (fileLoop handle size)
+        unless isHead (fileLoop file size)
       R.RejectedRanges -> errorResponse 416 [("content-range","bytes */"<>C.pack (show size))] "range not satisfiable\n"
       R.PartialRepresentation [range] -> do
         output 206 [("content-length",C.pack (show (R.rangeLength range))),("content-type",contentType),
@@ -351,12 +358,38 @@ serveStatic req relative extra handle status isHead closeAfter headOut send = do
         forM_ parts $ \(range,prefix) -> send prefix >> streamRange range >> send "\r\n"
         send end
   where
-    streamRange range=hSeek handle AbsoluteSeek (R.rangeStart range) >> fileLoop handle (R.rangeLength range)
+    streamRange range=hSeek file AbsoluteSeek (R.rangeStart range) >> fileLoop file (R.rangeLength range)
     fileLoop h left = when (left > 0) $ do
       bytes <- B.hGetSome h (fromInteger (min 65536 left))
       when (B.null bytes) $ failHTTP 500 "file changed during transfer"
       send bytes
       fileLoop h (left - fromIntegral (B.length bytes))
+
+-- Cache only pure derived fields. Every request still performs confined open and
+-- fstat first. A full cache is replaced on a miss; no file bytes or FDs are held.
+cachedStaticFields :: StaticCache -> UTCTime -> F.FileStatus -> B.ByteString -> Headers
+                   -> IO (R.EntityTag,B.ByteString,B.ByteString)
+cachedStaticFields (StaticCache fieldsRef dateRef) now status mediaType extra = do
+  let identity=(fromIntegral (F.deviceID status),fromIntegral (F.fileID status),fromIntegral (F.fileSize status),
+                F.modificationTimeHiRes status,F.statusChangeTimeHiRes status,mediaType,extra)
+  current <- readIORef fieldsRef
+  (tag,modified) <- case M.lookup identity current of
+    Just cached -> pure cached
+    Nothing -> do
+      let fields=(R.Weak (hexBytes (Crypto.sha256 (C.pack (show identity)))),
+                  R.formatHTTPDate (posixSecondsToUTCTime (fromInteger (floor (F.modificationTimeHiRes status)))))
+      atomicModifyIORef' fieldsRef $ \entries -> case M.lookup identity entries of
+        Just cached -> (entries,cached)
+        Nothing -> (M.insert identity fields (if M.size entries<256 then entries else M.empty),fields)
+  let second=floor (utcTimeToPOSIXSeconds now) :: Integer
+  oldDate <- readIORef dateRef
+  date <- case oldDate of
+    Just (previous,value) | previous==second -> pure value
+    _ -> do
+      let value=R.formatHTTPDate now
+      writeIORef dateRef (Just (second,value))
+      pure value
+  pure (tag,modified,date)
 
 hexBytes :: B.ByteString -> B.ByteString
 hexBytes=C.pack . concatMap (\byte -> let text=showHex byte "" in if length text==1 then '0':text else text) . B.unpack

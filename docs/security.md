@@ -96,3 +96,13 @@ File data still streams in 64 KiB chunks under the whole-response deadline. Too
 many/unsatisfiable ranges get 416; malformed/unknown units are ignored. Preconditions
 run before ranges, and 304/HEAD never emit a representation body. A configured
 Content-Encoding disables ranges rather than mislabeling a multipart envelope.
+
+The static metadata cache holds at most 256 derived entries per routing snapshot,
+plus one Date value keyed by its UTC second. A hit never bypasses confined open,
+regular-file validation or descriptor stat. Keys include device/inode, size,
+high-resolution modification/change times, media type and configured headers.
+URI spelling is not a cache key: repeated-slash aliases cannot retain long paths.
+No body data or file descriptors are retained. A miss at capacity replaces the
+map; a reload creates a new cache. This optimization does not strengthen metadata
+ETags or relax the atomic-publication requirement. Tests replace a warmed path
+with an escaping symlink and check Date refresh on repeated cached responses.

@@ -109,7 +109,10 @@ Static responses include weak metadata ETags and Last-Modified. If-Match,
 If-Unmodified-Since, If-None-Match and If-Modified-Since follow HTTP precedence;
 matching conditional retrievals return bodyless 304. ETags are deliberately weak:
 metadata is not a proof of byte identity, and no whole-file hash delays a download.
-The static route reserves its validator/range response headers.
+The static route reserves its validator/range response headers. A 256-entry
+per-snapshot cache reuses only derived validator/date text after each confined open
+and descriptor stat; it stores no file bytes or file descriptors. Date refreshes
+each second, and route reloads start a fresh cache.
 
 GET supports closed, open-ended and suffix byte ranges, including multipart 206.
 Overlapping/adjacent ranges merge; at most 16 comma-separated elements are allowed.
