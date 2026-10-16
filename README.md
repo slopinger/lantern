@@ -200,7 +200,7 @@ also boots the exported service module and verifies runtime credentials, low-por
 TLS, unprivileged startup, reload, rotation and clean stop; a native KVM builder
 is required. Its issuance,
 restart, renewal, failure preservation, and backoff checks need no internet or
-live service. Library checks add 12,000 HTTP wire/representation properties, 3,000 TLS record properties,
+live service. Library checks add 15,000 HTTP wire/representation properties, 3,000 TLS record properties,
 known answers, and real OpenSSL interoperability. x86_64-linux is tested here;
 aarch64-linux is defined but has not been built here.
 

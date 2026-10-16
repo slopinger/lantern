@@ -201,6 +201,12 @@ HTTP line parsing uses the independent library's bounded fragment accumulation
 and new-byte/CRLF-boundary search, avoiding quadratic prefix copying/scanning.
 Complete-buffer lines retain a direct slice path. Error/cancellation requires
 connection closure; deadlines and admission are still mandatory. The HTTP flake
-adds exact/overflow line and irregular request/body/pipeline regressions (9000
+adds exact/overflow line and irregular request/body/pipeline regressions (12000
 wire properties plus 3000 representation cases). See the library's fragmentation
 report for raw parser CPU/allocation trials and the coalesced-control tradeoff.
+
+The pinned HTTP library scans request targets with checked indices rather than
+allocating a byte list. Grammar and raw escapes are unchanged. An independent
+previous-policy oracle covers all single-octet suffixes, percent boundaries and
+3000 generated fragmented requests; long pipeline tests use varied target bytes.
+Current library totals are 12000 wire plus 3000 representation properties.

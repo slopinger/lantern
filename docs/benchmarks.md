@@ -212,3 +212,15 @@ All initial, prototype and final trials are retained in that report's JSON.
 This is parser work without sockets/TLS/files, not a new Lantern/Caddy throughput
 comparison or a peak-memory measurement. Fragment metadata remains bounded by
 the line's byte limit; absolute deadlines/admission remain necessary.
+
+## Request-target scan, 2026-10-16
+
+The [HTTP library's target-scan report](https://git.freifick.net/slop/lantern-http/-/blob/main/docs/target-scan.md)
+compares the indexed scan against `c9a0b57` using the unchanged long-request
+helper. Three alternating pairs of coalesced 8135-byte requests (10000 parses)
+used 3,292,484,144 -> 13,204,144 allocated bytes and median process CPU
+1.038380 -> 0.737323 seconds. All trials and source/helper hashes are public.
+These are roughly 99.6% less allocation and 29% less CPU in this unusually long
+target parser case, not measurements of ordinary server throughput, peak memory,
+TLS/files or Caddy performance. The earlier fragmentation report remains dated
+evidence of its earlier revision; this change retains that line algorithm.
