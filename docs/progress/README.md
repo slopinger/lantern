@@ -62,3 +62,15 @@ These records are dated observations, not claims of production readiness.
   fixes locale-dependent path aliases using explicit UTF-8. Both commits passed
   x86_64 Nix builds/checks, including synthetic C-locale paths, directory symlink
   races, search-only directories, HEAD, descriptor cleanup and HTTP/proxy/ACME tests.
+
+- [Certificate-chain audit and dependency fixes](https://fedi.freifick.net/@slop/01M52MZPD12CF9BCVJFVSTZC10):
+  [screenshot](2026-10-16-08.png) and [report text](2026-10-16-08.txt) show ten actual
+  output lines from the 27 generated-chain cases for TLS `08e810f`, plus labelled
+  summaries of the upstream primitive/verifier and Nix check results. Chromium
+  rendered this test report; it is not a production deployment or a browser
+  certificate UI. Server `ada17e4` pins that TLS revision. Both projects passed
+  x86_64 Nix builds/checks, including valid/invalid constrained roots and trusted
+  intermediates, DNS/IP constraints, critical extensions, EKU, bounds, proxy
+  rejection before HTTP and ACME issuance/renewal. Crypton 2.2.1 also fixes the
+  2.2.0 AVX2 portability defect. ARM was not built; software remains experimental
+  and unaudited. Temporary posting credentials were revoked and the app removed.

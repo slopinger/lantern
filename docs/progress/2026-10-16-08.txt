@@ -1,0 +1,24 @@
+Lantern certificate verification — 2026-10-16
+TLS 08e810f / server ada17e4
+
+Actual generated-chain test output (10 of 27 cases):
+
+dns-permitted: accepted=True, expected=True, HTTP sent=True
+dns-violation: accepted=False, expected=False, HTTP sent=False
+ipv4-permitted: accepted=True, expected=True, HTTP sent=True
+ipv4-violation: accepted=False, expected=False, HTTP sent=False
+ipv6-permitted: accepted=True, expected=True, HTTP sent=True
+ipv6-violation: accepted=False, expected=False, HTTP sent=False
+intermediate-purpose: accepted=False, expected=False, HTTP sent=False
+trusted-intermediate-constraints: accepted=False, expected=False, HTTP sent=False
+root-valid-constraints: accepted=True, expected=True, HTTP sent=True
+leaf-critical: accepted=False, expected=False, HTTP sent=False
+
+All 27 generated-chain cases passed.
+Crypton 2.2.1: 3714 examples, 0 failures; all 3 suites passed.
+Patched certificate verifier: all 873 tests passed.
+TLS and server: x86_64 Nix builds + flake checks passed.
+Server checks include rejected upstream chains and ACME issuance/renewal.
+
+Experimental, unaudited software. Unsupported constraint forms fail closed.
+This is a screenshot of a test report, not a production deployment.
