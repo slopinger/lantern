@@ -246,3 +246,8 @@ instructions in [performance observations](docs/benchmarks.md).
 The connection limit is shared atomically by HTTPS and HTTP-01 listeners, including
 clients still handshaking or waiting for request headers. The loopback ACME fixture
 also exercises concurrent arrivals at a one-connection limit.
+
+ACME-issued leaf DNS SANs must exactly match the requested site names (case and
+order ignored). Incorrect issuance retains the working certificate and enters
+retry backoff. A mismatched cached identity requires new issuance before HTTPS
+opens. Wildcard/CN substitution and additional identifiers are not accepted.

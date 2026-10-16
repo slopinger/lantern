@@ -237,3 +237,17 @@ The CA fixture checks this rollback, then places the synthetic future-dated chai
 in the private cache and verifies startup acquires a usable replacement before
 opening HTTPS. This is leaf date validation, not a claim of full issued-chain
 verification. No cryptographic primitives are reimplemented.
+
+## ACME issued identity consistency (2026-10-16)
+
+[RFC 8555 section 7.4](https://www.rfc-editor.org/rfc/rfc8555.html#section-7.4)
+relates order identifiers and the CSR's exact requested identifiers. Lantern now
+also checks the downloaded leaf against those configured names before activation.
+The test CA reproduced activation of a correct-key wrong-name certificate on the
+old executable. The independent TLS PKI helper decodes the leaf using retained
+X.509 code and requires exactly one well-formed SAN extension containing the exact
+bounded DNS set. Case and order are ignored; duplicate names, wildcard/CN
+substitution, missing or additional names and non-DNS entries fail closed.
+Renewal rejection preserves active/disk credentials and persists backoff; a
+mismatched cache requires acquisition before HTTPS opens. This is a DNS-only
+issuance consistency policy, separate from client PKIX path verification.

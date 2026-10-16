@@ -186,7 +186,20 @@ class CA(http.server.BaseHTTPRequestHandler):
             **({'certificate':s['base']+'/certificate/1'} if s['issued'] else {})}
     def sign_csr(self,csr,names):
         s=type(self).state;now=datetime.datetime.now(datetime.timezone.utc)
-        return x509.CertificateBuilder().subject_name(x509.Name([])).issuer_name(s['ca_cert'].subject).public_key(csr.public_key()).serial_number(x509.random_serial_number()).not_valid_before(now+datetime.timedelta(days=1) if s.get('future_certificate') else now-datetime.timedelta(minutes=5)).not_valid_after(now+datetime.timedelta(days=30)).add_extension(x509.BasicConstraints(ca=False,path_length=None),critical=True).add_extension(x509.SubjectAlternativeName([x509.DNSName(n) for n in names]),critical=True).add_extension(x509.KeyUsage(digital_signature=True,content_commitment=False,key_encipherment=True,data_encipherment=False,key_agreement=False,key_cert_sign=False,crl_sign=False,encipher_only=None,decipher_only=None),critical=True).add_extension(x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),critical=False).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(s['ca_key'].public_key()),critical=False).sign(s['ca_key'],hashes.SHA256())
+        mode = s.get('certificate_names')
+        if mode == 'wrong': names = ['wrong.example']
+        elif mode == 'extra': names = names + ['extra.example']
+        elif mode == 'wildcard': names = ['*.example']
+        elif mode == 'duplicate': names = names + names
+        elif mode == 'uppercase': names = [name.upper() for name in names]
+        builder = x509.CertificateBuilder().subject_name(x509.Name([])).issuer_name(s['ca_cert'].subject).public_key(csr.public_key()).serial_number(x509.random_serial_number()).not_valid_before(now+datetime.timedelta(days=1) if s.get('future_certificate') else now-datetime.timedelta(minutes=5)).not_valid_after(now+datetime.timedelta(days=30)).add_extension(x509.BasicConstraints(ca=False,path_length=None),critical=True)
+        if mode != 'missing':
+            san = (x509.SubjectAlternativeName([x509.DNSName(n) for n in names] +
+                   ([x509.UniformResourceIdentifier('https://extra.example/')] if mode == 'non-dns' else []))
+                   if mode != 'malformed' else
+                   x509.UnrecognizedExtension(x509.ObjectIdentifier('2.5.29.17'), b'\x30\x03\x82\x02x'))
+            builder = builder.add_extension(san, critical=True)
+        return builder.add_extension(x509.KeyUsage(digital_signature=True,content_commitment=False,key_encipherment=True,data_encipherment=False,key_agreement=False,key_cert_sign=False,crl_sign=False,encipher_only=None,decipher_only=None),critical=True).add_extension(x509.SubjectKeyIdentifier.from_public_key(csr.public_key()),critical=False).add_extension(x509.AuthorityKeyIdentifier.from_issuer_public_key(s['ca_key'].public_key()),critical=False).sign(s['ca_key'],hashes.SHA256())
 
 
 def wait_for(test, timeout=20):
@@ -332,6 +345,20 @@ site {state['name']} {{ respond "ACME works" }}
             # HTTP failure without waiting five minutes.
             (d/'state'/'retry-until').unlink()
             print('ACME rejected future-dated issuance without replacing active or persisted credentials')
+            for mode in ['wrong', 'extra', 'wildcard', 'duplicate', 'missing', 'non-dns', 'malformed']:
+                state['certificate_names'] = mode
+                failures = server.logfile.read_text().count('renewal failed')
+                activations = server.logfile.read_text().count('renewed certificate activated')
+                server.proc.send_signal(signal.SIGUSR1)
+                wait_for(lambda: server.logfile.read_text().count('renewal failed') > failures or
+                         server.logfile.read_text().count('renewed certificate activated') > activations)
+                assert server.logfile.read_text().count('renewal failed') > failures, ('mismatched SAN activated', mode)
+                assert fetch() == renewed and pem.read_bytes() == active_chain, mode
+                if mode == 'wrong': wrong_chain = state['chain']
+                assert not (d/'state'/'pending-chain.pem').exists()
+                (d/'state'/'retry-until').unlink()
+            state['certificate_names'] = None
+            print('ACME rejected wrong/extra/wildcard/duplicate/missing/non-DNS/malformed SAN issuance while retaining credentials')
             state['fail_next']=True
             failures = server.logfile.read_text().count('renewal failed')
             server.proc.send_signal(signal.SIGUSR1)
@@ -367,12 +394,24 @@ site {state['name']} {{ respond "ACME works" }}
             pem.chmod(0o600)
             (d/'state'/'retry-until').unlink()
             orders = state['orders']
+            state['certificate_names'] = 'uppercase'
             server = Running(d, cfg, port, startup_timeout=30)
             assert state['orders'] == orders + 1, 'future-dated cache was reused'
             current = x509.load_pem_x509_certificate(pem.read_bytes()).serial_number
             assert current != renewed and fetch() == current
             assert not state['errors'], state['errors']
             print('ACME replaced future-dated cached credentials before opening HTTPS')
+            server.close()
+            pem.write_bytes(wrong_chain)
+            pem.chmod(0o600)
+            state['certificate_names'] = None
+            orders = state['orders']
+            server = Running(d, cfg, port, startup_timeout=30)
+            assert state['orders'] == orders + 1, 'mismatched SAN cache was reused'
+            replacement = x509.load_pem_x509_certificate(pem.read_bytes()).serial_number
+            assert replacement != current and fetch() == replacement
+            assert not state['errors'], state['errors']
+            print('ACME replaced mismatched-SAN cache; exact uppercase SAN issuance also accepted')
         finally:
             if server:server.close()
             https.shutdown();https.server_close()

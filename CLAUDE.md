@@ -132,3 +132,12 @@ initial acquisition before the HTTPS listener opens. Renewal considers a
 not-yet-valid cache due. The synthetic CA fixture issues a future-dated leaf
 with the correct site key to test both renewal rollback and startup replacement.
 These checks do not claim a full ACME-issued chain policy audit.
+
+ACME requires the downloaded leaf SAN set to match the configured DNS identifiers
+exactly, ignoring ASCII case/order. Wrong, extra, duplicate, wildcard or non-DNS
+identifiers, absent/malformed/duplicate SAN extensions are rejected before disk
+publication. Cached identity mismatches trigger acquisition before HTTPS opens.
+The TLS PKI helper uses the retained X.509 decoder; no primitives are rewritten.
+The local CA fixture covers incorrect issuance rollback and wrong-name cache
+replacement, plus successful uppercase SAN issuance. This is not full chain trust
+verification of the downloaded certificate.

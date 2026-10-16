@@ -114,9 +114,12 @@ cachedCredentials cfg = do
     same <- if identityExists then (==manifest cfg) <$> privateRead (dir</>"identity") else pure False
     if not same then pure Nothing else do
       pem <- privateRead cert
-      (start,expiry) <- require (P.certificateTimes pem)
-      now <- floor <$> getPOSIXTime
-      if now < start || expiry <= now then pure Nothing else Just <$> TLS.loadCredentials cert key
+      case P.validateCertificateDNSNames (map siteHost (sites cfg)) pem of
+        Left _ -> pure Nothing
+        Right () -> do
+          (start,expiry) <- require (P.certificateTimes pem)
+          now <- floor <$> getPOSIXTime
+          if now < start || expiry <= now then pure Nothing else Just <$> TLS.loadCredentials cert key
 
 needsRenewal :: Config -> IO Bool
 needsRenewal cfg = do
@@ -216,6 +219,7 @@ acquireCertificate cfg challenges = do
   certURL <- checkedURL directoryURL =<< jtext "certificate" completed
   (certCode,_,pemBytes) <- signed session False certURL B.empty
   unless (certCode == 200) (fail "ACME certificate download failed")
+  require (P.validateCertificateDNSNames names pemBytes)
   (start,expiry) <- require (P.certificateTimes pemBytes)
   now <- floor <$> getPOSIXTime
   unless (start <= now && now < expiry) (fail "ACME returned a certificate outside its validity period")
