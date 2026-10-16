@@ -91,3 +91,44 @@ Reproduce both full and conditional cases with:
 ```sh
 nix develop -c python test/benchmark.py --conditional --lantern ./result/bin/lantern --out benchmark.json
 ```
+
+## Descriptor I/O profiling
+
+`test/profile_static.py` captures a fixed workload of ten connections, each making
+100 verified 4 KiB GETs. The JSON includes all strace output, RTS statistics,
+binary digest and platform information. Startup/shutdown and the readiness
+connection are included. Compare structural syscall counts, not percentages of
+traced time: blocking waits and tracing overhead distort CPU/time attribution.
+
+The original profile showed about three fstat calls, one fcntl, and one failing
+ioctl per response. Handle setup and handle-based reads contributed work on every
+request even though confinement had already supplied a regular descriptor. Static
+streaming now uses that descriptor with bounded POSIX reads and checked seeks,
+retaining openat2, metadata checks, independent per-request descriptors and cleanup.
+For 1,000 verified responses, fstat counts fell from 3,025 to 2,025, fcntl from
+1,023 to 23, and ioctl from 1,003 to 3. Reported heap allocation fell from
+68,551,056 to 49,749,008 bytes. Startup/shutdown are included; GC sampling and
+scheduler-related call counts are not stable per-request guarantees. Raw profiles:
+[before](syscalls-2026-10-16-fd-before.json),
+[descriptor I/O](syscalls-2026-10-16-fd-after.json).
+
+The repeated throughput test ran after builds and tracing finished, with the
+same two schedulers, 32 connections, one-second warmups and three four-second
+trials per case. The baseline is server `7ae95ed`; the candidate changes only the
+static descriptor path. This is still a shared VM without CPU affinity isolation.
+
+| Workload, requests/s | Baseline | Descriptor I/O |
+| --- | ---: | ---: |
+| 4 KiB, full | 4,150.6 | 4,281.1 |
+| 4 KiB, not-modified | 5,669.6 | 5,620.1 |
+| 1024 KiB, full | 624.6 | 583.6 |
+| 1024 KiB, not-modified | 5,683.0 | 5,400.8 |
+
+These results do not establish a throughput win from descriptor I/O alone: small
+full responses were slightly higher, conditional rates were similar/lower, and
+large-file throughput was lower. The allocation/setup reduction is demonstrated
+separately. Caddy remained faster in every workload; its conditional rates also
+varied between the sequential runs. Preserve these observations when evaluating
+further optimizations rather than attributing combined changes to descriptor I/O.
+Raw trials/control measurements: [baseline](benchmark-2026-10-16-fd-before.json)
+and [descriptor I/O](benchmark-2026-10-16-fd-after.json).

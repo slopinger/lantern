@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Lantern.Files (withFileBelow, pathFromTarget, directoryRedirect, probeConfinement) where
+module Lantern.Files (RegularFile, readFileChunk, seekFile, withFileBelow, pathFromTarget, directoryRedirect, probeConfinement) where
 import Control.Exception (bracket, onException)
 import Control.Monad (unless)
 import qualified Data.ByteString as B
@@ -10,10 +10,11 @@ import qualified Data.Text.Encoding as TE
 import Foreign.C.String (CString, withCString)
 import Foreign.C.Types (CInt(..))
 import Foreign.C.Error (getErrno, eNOSYS, eMFILE, eNFILE, eISDIR, throwErrno)
-import System.IO (Handle, hClose, hSetBinaryMode)
-import System.Posix.IO (fdToHandle, closeFd)
+import System.IO (SeekMode(AbsoluteSeek))
+import qualified Data.ByteString.Internal as BI
+import System.Posix.IO (closeFd, fdReadBuf, fdSeek)
 import System.Posix.Files (FileStatus, getFdStatus)
-import System.Posix.Types (Fd(..))
+import System.Posix.Types (Fd(..), FileOffset)
 import Lantern.HTTP (failHTTP)
 
 foreign import ccall safe "lantern_open" confinedOpen :: CString -> CString -> IO CInt
@@ -52,10 +53,25 @@ directoryRedirect target
   | otherwise = Just (path<>"/"<>query)
   where (path,query)=C.break (=='?') target
 
+-- Borrowed only within withFileBelow; no handle conversion or descriptor cache.
+newtype RegularFile = RegularFile Fd
+
+readFileChunk :: RegularFile -> Int -> IO B.ByteString
+readFileChunk (RegularFile fd) count = do
+  unless (count > 0 && count <= 65536) (failHTTP 500 "invalid file read bound")
+  BI.createAndTrim count $ \buffer -> fromIntegral <$> fdReadBuf fd buffer (fromIntegral count)
+
+seekFile :: RegularFile -> Integer -> IO ()
+seekFile (RegularFile fd) offset = do
+  let target = fromInteger offset :: FileOffset
+  unless (offset >= 0 && fromIntegral target == offset) (failHTTP 500 "invalid file offset")
+  _ <- fdSeek fd AbsoluteSeek target
+  pure ()
+
 -- Nothing means the confined open observed a directory, not a regular file.
--- Its descriptor is closed by the shim; only regular descriptors become handles.
-withFileBelow :: FilePath -> FilePath -> (Handle -> FileStatus -> IO a) -> IO (Maybe a)
-withFileBelow root relative action = bracket acquire (maybe (pure ()) (hClose . fst)) $
+-- The shim closes directory descriptors; Haskell brackets every regular FD.
+withFileBelow :: FilePath -> FilePath -> (RegularFile -> FileStatus -> IO a) -> IO (Maybe a)
+withFileBelow root relative action = bracket acquire (maybe (pure ()) (\(RegularFile fd,_) -> closeFd fd)) $
   maybe (pure Nothing) (\(h,status) -> Just <$> action h status)
   where
     acquire = withUTF8Path root $ \r -> withUTF8Path relative $ \p -> do
@@ -63,9 +79,7 @@ withFileBelow root relative action = bracket acquire (maybe (pure ()) (hClose . 
       if raw<0 then openFailure else do
         let fd=Fd raw
         status <- getFdStatus fd `onException` closeFd fd
-        h <- fdToHandle fd `onException` closeFd fd
-        hSetBinaryMode h True `onException` hClose h
-        pure (Just (h,status))
+        pure (Just (RegularFile fd,status))
     openFailure = do
       err <- getErrno
       if err==eISDIR then pure Nothing

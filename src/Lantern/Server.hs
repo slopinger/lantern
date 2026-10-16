@@ -325,7 +325,7 @@ dispatch cfg roots cache site req body peer _transport isHead closeAfter headOut
 
 -- Metadata and body come from the same confined descriptor. Atomic publication
 -- keeps an open representation stable; an in-place truncation still poisons I/O.
-serveStatic :: StaticCache -> Request -> FilePath -> Headers -> Handle -> F.FileStatus -> Bool -> Bool -> HeadOut -> Send -> IO ()
+serveStatic :: StaticCache -> Request -> FilePath -> Headers -> RegularFile -> F.FileStatus -> Bool -> Bool -> HeadOut -> Send -> IO ()
 serveStatic cache req relative extra file status isHead closeAfter headOut send = do
   now <- getCurrentTime
   let size=fromIntegral (F.fileSize status)
@@ -366,9 +366,9 @@ serveStatic cache req relative extra file status isHead closeAfter headOut send 
         forM_ parts $ \(range,prefix) -> send prefix >> streamRange range >> send "\r\n"
         send end
   where
-    streamRange range=hSeek file AbsoluteSeek (R.rangeStart range) >> fileLoop file (R.rangeLength range)
+    streamRange range=seekFile file (R.rangeStart range) >> fileLoop file (R.rangeLength range)
     fileLoop h left = when (left > 0) $ do
-      bytes <- B.hGetSome h (fromInteger (min 65536 left))
+      bytes <- readFileChunk h (fromInteger (min 65536 left))
       when (B.null bytes) $ failHTTP 500 "file changed during transfer"
       send bytes
       fileLoop h (left - fromIntegral (B.length bytes))

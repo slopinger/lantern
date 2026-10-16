@@ -7,6 +7,8 @@ import email.utils
 import http.client
 import os
 import pathlib
+import socket
+import struct
 import ssl
 import subprocess
 import tempfile
@@ -37,6 +39,27 @@ site encoded.local {{ root public header Content-Encoding gzip }}
     def tearDown(self):
         self.server.close()
         self.tmp.cleanup()
+
+    def test_static_descriptors_close_after_client_abort(self):
+        # A sparse body is larger than the socket buffers, so an RST interrupts
+        # a real file transfer rather than merely closing an idle keepalive.
+        with (self.directory/'public'/'large.bin').open('wb') as file:
+            file.truncate(64*1024*1024)
+        descriptors = pathlib.Path(f'/proc/{self.server.proc.pid}/fd')
+        before = len(list(descriptors.iterdir()))
+        for _ in range(80):
+            with socket.create_connection(('127.0.0.1', self.server.port), timeout=3) as peer:
+                peer.sendall(b'GET /large.bin HTTP/1.1\r\nHost: localhost\r\n\r\n')
+                self.assertTrue(peer.recv(512).startswith(b'HTTP/1.1 200 '))
+                peer.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+        for _ in range(100):
+            after = len(list(descriptors.iterdir()))
+            if after <= before+2:
+                break
+            time.sleep(.02)
+        self.assertLessEqual(after, before+2, 'aborted static streams leaked descriptors')
+        self.assertEqual(self.server.request()[::2], (200, b'hello conditional'))
+        self.assertEqual(self.server.request(method='HEAD')[::2], (200, b''))
 
     def test_conditional_precedence_and_dates(self):
         status, headers, body = self.server.request()

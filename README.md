@@ -216,3 +216,15 @@ The Nix build uses the TLS flake's shared primitive package set (Crypton 2.2.1,
 certificate verifier 1.10.0). HTTPS peers must satisfy its bounded certificate
 policy; unsupported name-constraint forms are rejected. See
 [security limits](docs/security.md) and the TLS library's own profile.
+
+Static file bodies use bounded POSIX reads from the same confined descriptor used
+for metadata. The file is closed at the end of each request, including errors;
+no file bodies or descriptors are cached. To inspect per-request syscall costs:
+
+```sh
+nix develop -c python test/profile_static.py --out syscalls.json
+```
+
+The helper creates a disposable loopback server and verifies 1,000 responses.
+Tracing changes timings; use its syscall counts alongside the separate benchmark
+instructions in [performance observations](docs/benchmarks.md).

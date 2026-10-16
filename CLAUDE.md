@@ -75,3 +75,16 @@
 - HTTPS proxy tests also offer 1024-bit issuer and 2047-bit leaf RSA keys through
   an independent test peer; both must return 502 without forwarding HTTP. The TLS
   dependency checks exact modulus bits and certificate signature algorithms.
+
+- Static streaming borrows an opaque RegularFile descriptor inside withFileBelow.
+  readFileChunk uses bounded (<=64 KiB) POSIX fdReadBuf through the established
+  unix package; seekFile uses checked absolute FileOffset conversion. No Handle
+  conversion, file-byte cache, FD cache, or change to openat2 confinement. Preserve
+  per-request same-descriptor metadata and exception-safe closeFd cleanup.
+- test/static_test.py checks descriptor cleanup after 80 interrupted sparse-file
+  transfers. test/profile_static.py verifies 1000 4 KiB responses and records strace
+  counts plus RTS stats; timing under tracing is not a throughput result. strace
+  is available in nix develop. Keep profiling separate from wrk measurements.
+- The ACME fixture permits 30 seconds for initial key generation/issuance before
+  the HTTPS listener opens. Ordinary fixture startup remains four seconds; tests
+  include server output on readiness timeout. Production deadlines are unchanged.
