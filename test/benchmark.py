@@ -37,12 +37,14 @@ def main():
     p.add_argument('--duration',type=int,default=4)
     p.add_argument('--trials',type=int,default=3)
     p.add_argument('--out',default='benchmark.json')
+    p.add_argument('--conditional',action='store_true',help='also measure verified If-None-Match / 304 responses')
     args=p.parse_args()
     assert args.caddy and args.wrk,'caddy and wrk are required'
     binary=str(pathlib.Path(args.lantern).resolve())
     results={'date_utc':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'kernel':platform.release(),
              'architecture':platform.machine(),'logical_cpus':os.cpu_count(),'server_runtime_threads':2,
              'generator_threads':2,'connections':32,'seconds_per_trial':args.duration,'trials':args.trials,
+             'load_average_at_start':list(os.getloadavg()),
              'lantern_sha256':hashlib.sha256(pathlib.Path(binary).read_bytes()).hexdigest(),
              'caddy_version':subprocess.check_output([args.caddy,'version'],text=True).strip(),
              'notes':['shared VM; warm page cache; loopback HTTP/1.1 only; no TLS or WAN claim',
@@ -74,19 +76,34 @@ def main():
                         path=f'/payload-{size}.bin'
                         c=http.client.HTTPConnection('127.0.0.1',listen,timeout=3)
                         c.request('GET',path,headers={'Host':'localhost'})
-                        r=c.getresponse();assert r.status==200 and r.read()==b'x'*size;c.close()
-                        base=[args.wrk,'-t2','-c32','-H','Host: localhost','--latency',f'http://127.0.0.1:{listen}{path}']
-                        subprocess.run(base+['-d1s'],check=True,capture_output=True)
-                        trials=[]
-                        for trial in range(args.trials):
-                            out=subprocess.check_output(base+[f'-d{args.duration}s'],text=True)
-                            if 'Socket errors:' in out or 'Non-2xx or 3xx responses:' in out:raise AssertionError(out)
-                            rate=float(re.search(r'Requests/sec:\s+([\d.]+)',out)[1])
-                            trials.append({'requests_per_second':rate,'rss_bytes_after_trial':rss(process.pid),'wrk_output':out})
-                        median=statistics.median(t['requests_per_second'] for t in trials)
-                        results['results'].append({'server':server,'body_bytes':size,'median_requests_per_second':median,
-                            'median_body_mib_per_second':median*size/(1024*1024),'trials':trials})
-                        print(f'{server}: {size} bytes, median {median:.1f} requests/s, {median*size/(1024*1024):.1f} body MiB/s',flush=True)
+                        r=c.getresponse();etag=r.getheader('etag')
+                        assert r.status==200 and r.read()==b'x'*size;c.close()
+                        for mode in (['full','not-modified'] if args.conditional else ['full']):
+                            request_headers={'Host':'localhost'}
+                            if mode=='not-modified':
+                                assert etag,server+' did not supply an ETag'
+                                request_headers['If-None-Match']=etag
+                            c=http.client.HTTPConnection('127.0.0.1',listen,timeout=3)
+                            c.request('GET',path,headers=request_headers)
+                            r=c.getresponse();expected_status=304 if mode=='not-modified' else 200
+                            expected_body=b'' if mode=='not-modified' else b'x'*size
+                            assert (r.status,r.read())==(expected_status,expected_body);c.close()
+                            base=[args.wrk,'-t2','-c32','--latency']
+                            for name,value in request_headers.items():base+=['-H',name+': '+value]
+                            base+=[f'http://127.0.0.1:{listen}{path}']
+                            subprocess.run(base+['-d1s'],check=True,capture_output=True)
+                            trials=[]
+                            for trial in range(args.trials):
+                                out=subprocess.check_output(base+[f'-d{args.duration}s'],text=True)
+                                if 'Socket errors:' in out or 'Non-2xx or 3xx responses:' in out:raise AssertionError(out)
+                                rate=float(re.search(r'Requests/sec:\s+([\d.]+)',out)[1])
+                                trials.append({'requests_per_second':rate,'rss_bytes_after_trial':rss(process.pid),'wrk_output':out})
+                            median=statistics.median(t['requests_per_second'] for t in trials)
+                            delivered=len(expected_body)
+                            results['results'].append({'server':server,'request_mode':mode,'status':expected_status,
+                                'body_bytes':size,'response_body_bytes':delivered,'median_requests_per_second':median,
+                                'median_body_mib_per_second':median*delivered/(1024*1024),'trials':trials})
+                            print(f'{server}: {size} bytes, {mode}, median {median:.1f} requests/s, {median*delivered/(1024*1024):.1f} body MiB/s',flush=True)
                 finally:
                     process.terminate()
                     try:process.wait(timeout=15)

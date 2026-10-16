@@ -24,7 +24,8 @@ main=do
       "site localhost { }", "site localhost { respond x } site localhost { respond y }",
       "site LOCALHOST { respond x } site localhost { respond y }",
       "site localhost { header Content-Length 5 respond x }", "listen 0.0.0.0:99999 site a { respond x }",
-      "site a { reverse_proxy https://upstream:443/path }", "site a { reverse_proxy http://user@upstream:80 }",
+      "site a { reverse_proxy https://upstream:443/path }",
+      "site a { root public header ETag x }", "site a { root public header Content-Range x }", "site a { reverse_proxy http://user@upstream:80 }",
       "site bad/host { respond x }", "site a { header X-A a header X-A b respond c }",
       "max_connections 99999 site a { respond x }", "body_limit 999999999 site a { respond x }",
       "site localhost { respond a } tls a b auto_https a@b c", "auto_https a@b c site localhost { respond x }"] $ \bad ->

@@ -35,3 +35,14 @@
 - The pinned TLS library supports X25519/P-256 ECDHE and one HelloRetryRequest;
   retries retain the original deadline and authenticated transcript. HTTP/TLS
   integration checks both P-256 downstream service and P-256-only upstreams.
+
+- Static requests use lantern-http's Representation helpers for conditions/ranges.
+  Same-descriptor stat/stream metadata, weak metadata ETags and Last-Modified;
+  never claim strong byte identity. If-Range with these validators falls back 200.
+- Max 16 range elements, overlap/adjacency coalescing, streamed multipart with
+  Crypton random boundaries/exact lengths; HEAD ignores Range. Static validator/
+  range headers are reserved. Configured Content-Encoding disables ranges.
+- test/static_test.py checks real HTTP/TLS conditions, multipart framing/reuse,
+  numeric bounds, confined ranges and atomic metadata/body publication races.
+- Benchmark --conditional also measures each server's own verified ETag/304 path;
+  response_body_bytes distinguishes avoided file bytes from delivered bytes.

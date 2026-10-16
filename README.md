@@ -105,6 +105,21 @@ There is no directory listing, hidden-file serving, or symlink following. Linux
 symlink replacement races. Publish into operator-controlled roots with atomic
 file/release replacement; do not rewrite a streamed file in place.
 
+Static responses include weak metadata ETags and Last-Modified. If-Match,
+If-Unmodified-Since, If-None-Match and If-Modified-Since follow HTTP precedence;
+matching conditional retrievals return bodyless 304. ETags are deliberately weak:
+metadata is not a proof of byte identity, and no whole-file hash delays a download.
+The static route reserves its validator/range response headers.
+
+GET supports closed, open-ended and suffix byte ranges, including multipart 206.
+Overlapping/adjacent ranges merge; at most 16 comma-separated elements are allowed.
+Wholly unsatisfiable or excessive ranges return 416; unknown/malformed ranges are
+ignored. HEAD ignores Range. If-Range needs strong evidence: the static server's
+weak ETag/date validators therefore cause a full 200 fallback. An empty file's
+nonzero suffix range also falls back to its empty full response. Operator-specified
+Content-Encoding disables ranges; Lantern does not encode the multipart envelope.
+Files stream from the same confined descriptor that supplied size and timestamps.
+
 Reverse proxy upstreams are fixed `http://host:port` or `https://host:port`
 endpoints (explicit ports, no paths or credentials). HTTPS uses Lantern's own TLS
 client, verifies the configured host against its certificate SANs and trust roots,
@@ -120,8 +135,7 @@ no implicit proxies, redirects, pooled connections, or request retries. A global
 64 MiB reservation budget bounds concurrent request-body memory; excess body
 requests get 503. Known upstream responses over 1 GiB are rejected before headers.
 
-Not included: HTTP/2/3, WebSockets/CONNECT, compression, range or
-conditional-file handling, directory-slash redirects, wildcard hosts, DNS-01,
+Not included: HTTP/2/3, WebSockets/CONNECT, compression, directory-slash redirects, wildcard hosts, DNS-01,
 external-account binding, ACME revocation/account rotation, or configurable route
 matchers. This is not a complete Caddy replacement.
 
@@ -129,7 +143,7 @@ matchers. This is not a complete Caddy replacement.
 
 - [lantern-http](https://git.freifick.net/slop/lantern-http): incremental wire parsing,
   framing, chunk decoding, response serialization, and hop-field filtering;
-  runtime dependencies are only base and bytestring.
+  runtime dependencies are base, bytestring and time.
 - [lantern-tls](https://git.freifick.net/slop/lantern-tls): own client/server TLS 1.3
   state/record/key-schedule code, PEM/DER server credentials and CSRs; Crypton
   provides primitives and client PKIX verification.
@@ -149,6 +163,7 @@ nix develop
 # inside the shell:
 cabal test --offline
 LANTERN_BIN=./result/bin/lantern python test/http_test.py
+LANTERN_BIN=./result/bin/lantern python test/static_test.py
 LANTERN_BIN=./result/bin/lantern python test/https_proxy_test.py
 LANTERN_BIN=./result/bin/lantern python test/acme_test.py
 python test/benchmark.py --lantern ./result/bin/lantern --out benchmark.json
@@ -158,7 +173,7 @@ python test/benchmark.py --lantern ./result/bin/lantern --out benchmark.json
 HTTP/TLS/file-race/deadline/admission/proxy/reload tests, and a disposable ACME CA
 that verifies JWS/CSRs and fetches the real HTTP-01 endpoint. Its issuance,
 restart, renewal, failure preservation, and backoff checks need no internet or
-live service. Library checks add 8,000 HTTP properties, 3,000 TLS record properties,
+live service. Library checks add 11,000 HTTP wire/representation properties, 3,000 TLS record properties,
 known answers, and real OpenSSL interoperability. x86_64-linux is tested here;
 aarch64-linux is defined but has not been built here.
 

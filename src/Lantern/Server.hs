@@ -12,6 +12,10 @@ import Data.List (find)
 import qualified Data.Map.Strict as M
 import qualified Data.Text as T
 import Data.Time.Clock
+import Data.Time.Clock.POSIX (utcTimeToPOSIXSeconds, posixSecondsToUTCTime)
+import Crypto.Random (getRandomBytes)
+import Numeric (showHex)
+import qualified System.Posix.Files as F
 import Data.Time.Format
 import Network.Mime (defaultMimeLookup)
 import Network.Socket hiding (listen)
@@ -23,6 +27,8 @@ import System.Timeout (timeout)
 import Lantern.Config
 import Lantern.Files
 import Lantern.HTTP
+import qualified Lantern.HTTP.Representation as R
+import qualified Lantern.TLS.Crypto as Crypto
 import Lantern.Transport
 import Lantern.Client (parseURL)
 import qualified Lantern.TLS as TLS
@@ -292,22 +298,68 @@ dispatch cfg roots site req body peer _transport isHead closeAfter headOut send 
     Root root -> do
       unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "static files require GET or HEAD"
       relative <- either (const (failHTTP 400 "unsafe path")) pure (pathFromTarget (reqTarget req))
-      let serve = withFileBelow root relative $ \h -> do
-            size <- hFileSize h
-            headers <- common closeAfter (("content-length",C.pack (show size)):
-              mergeDefaults [("content-type",defaultMimeLookup (T.pack relative))] extra)
-            headOut 200 headers
-            unless isHead (fileLoop h size)
+      let serve = withFileBelow root relative $ \h status ->
+            serveStatic req relative extra h status isHead closeAfter headOut send
       serve `catch` \(e :: IOException) ->
         if isDoesNotExistError e || isPermissionError e then failHTTP 404 "file not found" else throwIO e
     Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send
   where
     extra = siteHeaders site
+
+-- Metadata and body come from the same confined descriptor. Atomic publication
+-- keeps an open representation stable; an in-place truncation still poisons I/O.
+serveStatic :: Request -> FilePath -> Headers -> Handle -> F.FileStatus -> Bool -> Bool -> HeadOut -> Send -> IO ()
+serveStatic req relative extra handle status isHead closeAfter headOut send = do
+  now <- getCurrentTime
+  let size=fromIntegral (F.fileSize status)
+      seconds=min (floor (F.modificationTimeHiRes status)) (floor (utcTimeToPOSIXSeconds now)) :: Integer
+      modified=posixSecondsToUTCTime (fromInteger seconds)
+      identity=C.pack (show (F.deviceID status,F.fileID status,F.fileSize status,
+        F.modificationTimeHiRes status,F.statusChangeTimeHiRes status,relative,contentType,extra))
+      tag=R.Weak (hexBytes (Crypto.sha256 identity))
+      validators=R.Validators (Just tag) (Just modified) False
+      encoded=header "content-encoding" extra /= Nothing
+      metadata=[("etag",R.renderEntityTag tag),("last-modified",R.formatHTTPDate modified),
+                ("accept-ranges",if encoded then "none" else "bytes")]
+      contentType=maybe (defaultMimeLookup (T.pack relative)) id (header "content-type" extra)
+      other=filter ((/="content-type") . fst) extra
+      output code fields=let selected=if code `elem` [412,416]
+                               then filter (\(key,_) -> key `notElem` ["content-encoding","content-language","content-location"]) other
+                               else other
+                         in common closeAfter (metadata++fields++selected) >>= headOut code
+      errorResponse code fields body=do
+        output code (("content-length",C.pack (show (B.length body))):("content-type","text/plain; charset=utf-8"):fields)
+        unless isHead (send body)
+  condition <- either (const (failHTTP 400 "invalid conditional request")) pure (R.preconditions now (reqMethod req) (reqHeaders req) validators)
+  case condition of
+    R.NotModified -> output 304 []
+    R.PreconditionFailed -> errorResponse 412 [] "precondition failed\n"
+    R.Proceed -> case if encoded then R.FullRepresentation else R.selectRanges now (reqMethod req) (reqHeaders req) validators size of
+      R.FullRepresentation -> do
+        output 200 [("content-length",C.pack (show size)),("content-type",contentType)]
+        unless isHead (fileLoop handle size)
+      R.RejectedRanges -> errorResponse 416 [("content-range","bytes */"<>C.pack (show size))] "range not satisfiable\n"
+      R.PartialRepresentation [range] -> do
+        output 206 [("content-length",C.pack (show (R.rangeLength range))),("content-type",contentType),
+                    ("content-range",R.contentRange size range)]
+        streamRange range
+      R.PartialRepresentation ranges -> do
+        entropy <- getRandomBytes 16 :: IO B.ByteString
+        let boundary="lantern_"<>hexBytes entropy
+        (parts,end,total) <- either (const (failHTTP 500 "invalid multipart metadata")) pure (R.multipartParts boundary contentType size ranges)
+        output 206 [("content-length",C.pack (show total)),("content-type","multipart/byteranges; boundary="<>boundary)]
+        forM_ parts $ \(range,prefix) -> send prefix >> streamRange range >> send "\r\n"
+        send end
+  where
+    streamRange range=hSeek handle AbsoluteSeek (R.rangeStart range) >> fileLoop handle (R.rangeLength range)
     fileLoop h left = when (left > 0) $ do
       bytes <- B.hGetSome h (fromInteger (min 65536 left))
       when (B.null bytes) $ failHTTP 500 "file changed during transfer"
       send bytes
       fileLoop h (left - fromIntegral (B.length bytes))
+
+hexBytes :: B.ByteString -> B.ByteString
+hexBytes=C.pack . concatMap (\byte -> let text=showHex byte "" in if length text==1 then '0':text else text) . B.unpack
 
 proxyRequest :: Config -> Maybe TLS.TrustStore -> Upstream -> Site -> Request -> B.ByteString -> SockAddr -> Bool -> Bool -> HeadOut -> Send -> IO ()
 proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send = do

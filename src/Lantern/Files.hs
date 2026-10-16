@@ -12,6 +12,7 @@ import Foreign.C.Types (CInt(..))
 import Foreign.C.Error (getErrno, eNOSYS, eMFILE, eNFILE, throwErrno)
 import System.IO (Handle, hClose, hSetBinaryMode)
 import System.Posix.IO (fdToHandle, closeFd)
+import System.Posix.Files (FileStatus, getFdStatus)
 import System.Posix.Types (Fd(..))
 import Lantern.HTTP (failHTTP)
 
@@ -42,16 +43,17 @@ pathFromTarget target = do
           | c >= 97 && c <= 102 = Just (c-87)
           | otherwise = Nothing
 
-withFileBelow :: FilePath -> FilePath -> (Handle -> IO a) -> IO a
-withFileBelow root relative = bracket acquire hClose
+withFileBelow :: FilePath -> FilePath -> (Handle -> FileStatus -> IO a) -> IO a
+withFileBelow root relative action = bracket acquire (hClose . fst) (uncurry action)
   where
     acquire = withCString root $ \r -> withCString relative $ \p -> do
       raw <- confinedOpen r p
       whenInvalid raw
       let fd=Fd raw
+      status <- getFdStatus fd `onException` closeFd fd
       h <- fdToHandle fd `onException` closeFd fd
       hSetBinaryMode h True `onException` hClose h
-      pure h
+      pure (h,status)
     whenInvalid raw = if raw >= 0 then pure () else do
       err <- getErrno
       if err == eMFILE || err == eNFILE then failHTTP 503 "file descriptor limit"

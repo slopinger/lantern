@@ -7,11 +7,11 @@
         ]
       },
       "locked": {
-        "lastModified": 1792083885,
-        "narHash": "sha256-I0u/SyYMySfPHIqqog2W+Ljx73PkqUto50VfWOh/YzA=",
+        "lastModified": 1792135069,
+        "narHash": "sha256-5TXqdllo71uHNUzlxtHwONvhMm2aAulb7Rxds0g3K8U=",
         "ref": "main",
-        "rev": "f3562314b5d36d0e20ce3d57a8b4d7d36d661667",
-        "revCount": 1,
+        "rev": "b2d8ccb72e9ad1f1f6c408a6e60a68a5e1499874",
+        "revCount": 2,
         "type": "git",
         "url": "https://git.freifick.net/slop/lantern-http.git"
       },

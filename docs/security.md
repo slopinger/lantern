@@ -81,3 +81,18 @@ A retry does not reset the handshake or upstream deadline. Its original hello,
 synthetic message_hash, retry and second hello are authenticated by the handshake.
 The independent TLS project tests parameter immutability, malformed points and
 cookie handling; Lantern integration checks P-256 client and server paths.
+
+Static conditional/range semantics use the independent HTTP representation module.
+File size/timestamps are read from the confined descriptor before it becomes the
+streaming handle, avoiding path-stat/reopen races. Metadata ETags are weak, not
+content digests or proofs against malicious in-place writes; publish immutable
+files through atomic replacement. If-Range falls back to full content for these
+weak validators. Generated metadata headers cannot be overridden on a static site.
+
+Range lists have a 16-element cap, bounded decimal arithmetic, overlap/adjacency
+coalescing and no duplicate body bytes. Multipart boundaries use 128 random bits
+from Crypton; prefixes and exact Content-Length are computed before transmission.
+File data still streams in 64 KiB chunks under the whole-response deadline. Too
+many/unsatisfiable ranges get 416; malformed/unknown units are ignored. Preconditions
+run before ranges, and 304/HEAD never emit a representation body. A configured
+Content-Encoding disables ranges rather than mislabeling a multipart envelope.

@@ -177,3 +177,26 @@ ClientHello fields; the client rejects an already offered/unsupported requested
 group, repeated retry and changed final parameters. See the TLS project's
 research/security notes and independent OpenSSL/adversarial fixtures. Lantern's
 HTTP and HTTPS proxy checks exercise the newly pinned P-256 paths end to end.
+
+## Static conditional transfers and byte ranges (2026-10-16)
+
+The independent HTTP library now owns entity-tag/date parsing, precondition order,
+range normalization and multipart lengths, informed by
+[RFC 9110 sections 8.8, 13, 14 and 15.3.7](https://www.rfc-editor.org/rfc/rfc9110.html).
+Lantern obtains metadata from the same confined descriptor it streams, not from
+an independent path lookup. Weak tags hash metadata, route/header identity and
+file identity with Crypton's SHA-256 primitive; this is not a file-content hash.
+It avoids pre-reading a large file, and intentionally never supplies strong
+If-Range evidence. Last-Modified is clamped to the response's current time.
+
+The chosen range policy coalesces overlaps/adjacency, retains the first-requested
+order of disjoint groups, and caps elements at 16. Multipart framing is generated
+with a random boundary and exact length, without buffering file data. Configured
+content coding disables ranges. The library can evaluate strong validators when
+a caller has them; this file server chooses conservative metadata validators.
+
+Independent Python HTTP/email MIME parsers verify status, framing and byte slices.
+Tests also cover enormous decimals, empty files, conditional precedence, repeated
+requests after 304/multipart, same-size/same-mtime atomic replacement, confinement,
+concurrent replacement and verified TLS ranges. These checks do not authorize
+in-place mutation of a published file or prove metadata tags collision-free.
