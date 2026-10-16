@@ -47,7 +47,7 @@ the proxy must still authenticate/authorize users and understand their proxy bou
 ## Important limits
 
 TLS supports a restricted 1.3 profile, not every standards-required feature. There
-is no HelloRetryRequest, P-256 key agreement, resumption, mutual TLS, post-quantum
+is no resumption, mutual TLS, post-quantum
 handshake, revocation/OCSP fetching, or guarantee of secret erasure from managed
 memory. The client relies on Crypton's certificate-path validation primitives;
 there is no insecure verification switch. Test-only staging roots must not be
@@ -75,3 +75,9 @@ Let’s Encrypt staging issuance, cached startup and in-process renewal also pas
 Benchmarks measure supported paths, not security. Independent review, richer
 coverage-guided fuzzing, formal state-machine work, secret-memory handling and a
 real NixOS service boot test remain before any production-security claim.
+
+The TLS client and server support X25519/P-256 ECDHE and a single HelloRetryRequest.
+A retry does not reset the handshake or upstream deadline. Its original hello,
+synthetic message_hash, retry and second hello are authenticated by the handshake.
+The independent TLS project tests parameter immutability, malformed points and
+cookie handling; Lantern integration checks P-256 client and server paths.

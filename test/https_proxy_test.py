@@ -42,7 +42,7 @@ class Tests(unittest.TestCase):
             root = certificate(root_key, None, None, 'test root', ca=True)
             root_path = directory/'root.pem'
             root_path.write_bytes(root.public_bytes(serialization.Encoding.PEM))
-            for kind in ['rsa', 'ecdsa', 'wrong-host', 'unknown-ca', 'expired', 'tls12']:
+            for kind in ['rsa', 'ecdsa', 'p256', 'wrong-host', 'unknown-ca', 'expired', 'tls12']:
                 with self.subTest(kind=kind):
                     key = (ec.generate_private_key(ec.SECP256R1()) if kind == 'ecdsa' else
                            rsa.generate_private_key(public_exponent=65537, key_size=2048))
@@ -57,7 +57,7 @@ class Tests(unittest.TestCase):
                     backend = http.server.ThreadingHTTPServer(('127.0.0.1', 0), Backend)
                     context = ssl.SSLContext(ssl.PROTOCOL_TLS_SERVER)
                     context.load_cert_chain(cert_path, key_path)
-                    context.set_ecdh_curve('X25519')
+                    context.set_ecdh_curve('prime256v1' if kind == 'p256' else 'X25519')
                     context.set_alpn_protocols(['http/1.1'])
                     if kind == 'tls12':
                         context.maximum_version = ssl.TLSVersion.TLSv1_2
@@ -71,7 +71,7 @@ class Tests(unittest.TestCase):
                     Backend.seen = None
                     try:
                         server = Running(directory, config, port)
-                        if kind not in ['rsa', 'ecdsa']:
+                        if kind not in ['rsa', 'ecdsa', 'p256']:
                             self.assertEqual(server.request('/private')[0], 502)
                             self.assertIsNone(Backend.seen, 'HTTP sent before authenticated TLS')
                             self.assertIsNone(server.proc.poll())

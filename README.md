@@ -113,8 +113,7 @@ for every HTTPS upstream, independently of ACME trust. It is resolved relative t
 the Lanternfile and loaded once per routing snapshot; SIGHUP reloads its contents
 atomically. Changing the configured bundle path requires a restart. TLS failures
 return 502 before response headers; later failures close the downstream stream.
- Client-supplied
-forwarding identity is replaced with the actual peer and selected host/scheme.
+Client-supplied forwarding identity is replaced with the actual peer and selected host/scheme.
 Hop-by-hop fields are removed in both directions. Requests are bounded and
 buffered; responses stream with backpressure. One upstream connection per request,
 no implicit proxies, redirects, pooled connections, or request retries. A global
@@ -150,6 +149,7 @@ nix develop
 # inside the shell:
 cabal test --offline
 LANTERN_BIN=./result/bin/lantern python test/http_test.py
+LANTERN_BIN=./result/bin/lantern python test/https_proxy_test.py
 LANTERN_BIN=./result/bin/lantern python test/acme_test.py
 python test/benchmark.py --lantern ./result/bin/lantern --out benchmark.json
 ```
@@ -170,3 +170,8 @@ ACME HTTPS URLs preserve their original bytes for JWS signing, normalize host
 case for origin checks, support query-only targets and bracketed IPv6 authorities,
 and reject malformed percent escapes. Redirects and embedded credentials remain
 unsupported.
+
+The TLS library supports X25519 and P-256 key agreement and one HelloRetryRequest
+within the original handshake deadline. The server can request a missing key
+share; the HTTPS client can answer P-256 and cookie retries. Transcript and
+parameter-change checks apply to retries as well as ordinary handshakes.

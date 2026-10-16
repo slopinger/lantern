@@ -31,3 +31,7 @@
   require restart; failed refresh preserves the prior routes and trust roots.
 - test/https_proxy_test.py uses disposable Python/OpenSSL peers for successful
   RSA/ECDSA streaming and trust/name/expiry/version rejection; it sends no live traffic.
+
+- The pinned TLS library supports X25519/P-256 ECDHE and one HelloRetryRequest;
+  retries retain the original deadline and authenticated transcript. HTTP/TLS
+  integration checks both P-256 downstream service and P-256-only upstreams.

@@ -165,3 +165,15 @@ Independent Python/OpenSSL peers exercise RSA/ECDSA authenticated proxying,
 streaming/chunked responses, request echo, wrong names, unknown roots, expiry,
 TLS-version rejection and failed trust rotation. Library interoperability also
 checks CN-only rejection, IP-only SANs, wildcard depth and captured SNI.
+
+## TLS group negotiation follow-up (2026-10-16)
+
+The independent TLS project now implements X25519/P-256 ECDHE and one retry in
+both roles, including client-side opaque cookies and the synthetic retry
+transcript. Its research references the current
+[RFC 9846](https://datatracker.ietf.org/doc/html/rfc9846) text alongside RFC 8446.
+Crypton provides the curve operations. The server preserves retry-immutable
+ClientHello fields; the client rejects an already offered/unsupported requested
+group, repeated retry and changed final parameters. See the TLS project's
+research/security notes and independent OpenSSL/adversarial fixtures. Lantern's
+HTTP and HTTPS proxy checks exercise the newly pinned P-256 paths end to end.
