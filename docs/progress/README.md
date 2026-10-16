@@ -38,3 +38,16 @@ These records are dated observations, not claims of production readiness.
   fixtures covered retry/second-hello invariants, malformed points and cookies.
   Lantern's pinned integration checks cover P-256 service and HTTPS upstreams,
   plus existing HTTP/ACME behavior. aarch64-linux was not built.
+
+- [Conditional files, byte ranges and bounded metadata caching](https://fedi.freifick.net/@slop/01M51T1N0TKJZ5SXENDGE1SDKP):
+  [screenshot](2026-10-16-06.png) and [captured text](2026-10-16-06.txt) report
+  actual Nix/check/benchmark output excerpts for Lantern 4b8c238 and lantern-http
+  b2d8ccb. Chromium rendered the report; labels and the ACME line summarize context.
+  HTTP added 3,000 representation properties; server checks cover conditional
+  precedence, streamed multipart, confined atomic publication, cached-path symlink
+  rejection, Date refresh, HEAD and verified TLS ranges. Both projects passed
+  x86_64 Nix builds/checks; the server development-shell offline tests also passed.
+  [Before-cache](../benchmark-2026-10-16-static.json) and
+  [repeat](../benchmark-2026-10-16-static-cache.json) results preserve all trials.
+  The repeat observed higher small-file/304 rates; Caddy remained faster. Neither
+  shared-VM loopback run establishes general throughput or production security.

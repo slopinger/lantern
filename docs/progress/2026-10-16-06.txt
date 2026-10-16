@@ -1,0 +1,32 @@
+Lantern / conditional files, byte ranges and bounded metadata cache
+2026-10-16 · lantern 4b8c238 · lantern-http b2d8ccb
+Actual Nix check and loopback benchmark output excerpts
+
+$ nix build && nix flake check  # lantern-http
+protocol regressions passed (128 fragmentation widths, 8000 properties)
+conditional/date/range regressions and 3000 range coverage/length properties passed
+
+$ nix flake check  # lantern
+Ran 12 tests in 9.193s
+test_atomic_publication_and_confined_ranges (__main__.Tests.test_atomic_publication_and_confined_ranges) ... ok
+test_date_refreshes_on_repeated_cached_responses (__main__.Tests.test_date_refreshes_on_repeated_cached_responses) ... ok
+test_multipart_framing_and_coalescing (__main__.Tests.test_multipart_framing_and_coalescing) ... ok
+test_verified_tls_ranges_and_conditional_reuse (__main__.Tests.test_verified_tls_ranges_and_conditional_reuse) ... ok
+Ran 6 tests in 0.769s
+Ran 2 tests in 6.203s
+ACME fixture: passed (full output and tests are in the repository).
+
+$ python test/benchmark.py --conditional ...
+Shared VM · warm loopback HTTP/1.1 · 2 server schedulers · wrk 2 threads/32 connections
+lantern: 4096 bytes, full, median 3547.7 requests/s, 13.9 body MiB/s
+lantern: 4096 bytes, not-modified, median 4656.5 requests/s, 0.0 body MiB/s
+lantern: 1048576 bytes, full, median 495.6 requests/s, 495.6 body MiB/s
+lantern: 1048576 bytes, not-modified, median 4673.6 requests/s, 0.0 body MiB/s
+caddy: 4096 bytes, full, median 8175.6 requests/s, 31.9 body MiB/s
+caddy: 4096 bytes, not-modified, median 10572.8 requests/s, 0.0 body MiB/s
+caddy: 1048576 bytes, full, median 717.1 requests/s, 717.1 body MiB/s
+caddy: 1048576 bytes, not-modified, median 10791.0 requests/s, 0.0 body MiB/s
+
+Both projects passed x86_64 Nix checks; ARM not built.
+Caddy remained faster. Conditional responses avoid the file body.
+Experimental and unaudited; no production deployment changed.
