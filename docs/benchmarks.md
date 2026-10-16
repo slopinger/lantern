@@ -37,3 +37,26 @@ nix develop -c python test/benchmark.py \
 The script creates loopback-only temporary Lantern/Caddy instances and cleans them
 up. It does not benchmark or write to live services. Future optimization should
 keep the malformed-message, symlink-race, admission, and reload tests passing.
+
+## Conditional/static milestone, 2026-10-16
+
+Server commit `95a8573`, independent HTTP library `b2d8ccb`. The same loopback
+method was run with `--conditional`, using each server’s own ETag and verifying
+304 plus an empty response body before measurement. Caddy was v2.11.7.
+The run had three four-second trials per case, two schedulers per server,
+two generator threads and 32 connections. Start load averages were [0.734375, 0.85546875, 1.89306640625].
+
+| Workload | Lantern median requests/s | Caddy median requests/s |
+| --- | ---: | ---: |
+| 4 KiB, full | 2,681.6 | 8,072.1 |
+| 4 KiB, not-modified | 3,352.7 | 10,907.0 |
+| 1024 KiB, full | 503.9 | 749.6 |
+| 1024 KiB, not-modified | 3,287.7 | 10,897.2 |
+
+Caddy remained faster. A successful 304 avoided the entire file body; its
+request rate is not file-throughput performance. Full 1 MiB transfers measured
+503.9 MiB/s for Lantern and 749.6 MiB/s for Caddy. Do not attribute differences
+from the October 15 baseline solely to code: this shared VM has no load or
+CPU-affinity isolation. This run does not measure TLS, ranges or cold storage.
+[Raw outputs and binary digest](benchmark-2026-10-16-static.json) include
+all trials. No wrk socket errors or unexpected response classes were reported.
