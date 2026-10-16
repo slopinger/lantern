@@ -145,6 +145,10 @@ parseConfig name input = do
       when (null dir) $ Left "auto_https needs a state directory"
       unless ('@' `elem` email && all (\c -> c > ' ' && c < '\DEL') email) $ Left "invalid ACME email"
       when (endpointPort (listen config) == acmeHTTPPort config) $ Left "automatic HTTPS needs a TLS port separate from HTTP port 80"
+      -- This ACME profile emits dns identifiers, never RFC 8738 ip identifiers.
+      -- Also reject legacy numeric spellings instead of treating them as DNS.
+      when (any (B.all (\c -> (c >= 48 && c <= 57) || c == 46)) names) $
+        Left "auto_https requires DNS names; numeric/IP site identifiers are unsupported"
       when (any (\n -> n == "localhost" || not (C.elem '.' n)) names) $ Left "auto_https requires public DNS hostnames"
     _ -> pure ()
   pure config

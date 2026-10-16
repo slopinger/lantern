@@ -179,3 +179,10 @@ allocating a byte list. Grammar and raw escapes are unchanged. An independent
 previous-policy oracle covers all single-octet suffixes, percent boundaries and
 3000 generated fragmented requests; long pipeline tests use varied target bytes.
 Current library totals are 12000 wire plus 3000 representation properties.
+
+Automatic HTTPS accepts DNS identifiers only. All-numeric dotted site names
+(including IPv4 and legacy/zero-padded spellings) fail configuration validation
+before state creation, binding or CA requests. Numeric labels inside a DNS name
+remain valid. This restriction is automatic-mode-only; plain/manual site parsing
+keeps its existing numeric-host support. CLI regression observes an occupied
+HTTP port and dummy CA to verify diagnostic ordering and absence of side effects.

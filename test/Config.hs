@@ -1,6 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Main (main) where
 import Control.Monad (unless,forM_)
+import Data.List (isInfixOf)
 import qualified Data.ByteString as B
 import qualified Data.Text as T
 import qualified Data.Map.Strict as M
@@ -30,6 +31,16 @@ main=do
       "max_connections 99999 site a { respond x }", "body_limit 999999999 site a { respond x }",
       "site localhost { respond a } tls a b auto_https a@b c", "auto_https a@b c site localhost { respond x }"] $ \bad ->
     check "invalid configuration accepted" (case parseConfig "test" bad of Left _ -> True;Right _ -> False)
+  forM_ ["192.0.2.1","0.0.0.0","255.255.255.255","127.1","01.2.3.4","999.999.999.999"] $ \name -> do
+    let site = "site " ++ name ++ " { respond ok }"
+    check "numeric automatic site accepted" (case parseConfig "test" ("auto_https a@b ./state " ++ site) of
+      Left message -> "DNS names" `isInfixOf` message
+      Right _ -> False)
+    check "plain numeric site rejected" (case parseConfig "test" site of Right _ -> True; Left _ -> False)
+    check "manual numeric site rejected" (case parseConfig "test" ("tls cert.pem key.pem " ++ site) of Right _ -> True; Left _ -> False)
+  forM_ ["123.example.org","1.2.example.org","example2026.org"] $ \name ->
+    check "numeric DNS label rejected" (case parseConfig "test" ("auto_https a@b ./state site " ++ name ++ " { respond ok }") of
+      Right _ -> True; Left _ -> False)
   forM_ [("localhost:8080",Endpoint "localhost" 8080),
       ("EXAMPLE.org:443",Endpoint "EXAMPLE.org" 443),
       ("192.0.2.1:80",Endpoint "192.0.2.1" 80),

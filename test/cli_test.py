@@ -183,6 +183,30 @@ class Tests(unittest.TestCase):
                     self.assertEqual(result.returncode, 1, result)
                     self.assertIn('endpoint', result.stderr)
 
+    def test_automatic_numeric_sites_fail_before_startup_side_effects(self):
+        with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
+            directory = pathlib.Path(temporary)
+            with socket.socket() as occupied, socket.socket() as ca:
+                occupied.bind(('127.0.0.1', 0)); occupied.listen()
+                ca.bind(('127.0.0.1', 0)); ca.listen(); ca.settimeout(.1)
+                config = directory/'Lanternfile'
+                for name in ['192.0.2.1', '0.0.0.0', '255.255.255.255', '127.1', '01.2.3.4']:
+                    config.write_text('listen 127.0.0.1:443\n'
+                        'auto_https test@example.com ./private-state\n'
+                        f'acme_http_port {occupied.getsockname()[1]}\n'
+                        f'acme_ca https://127.0.0.1:{ca.getsockname()[1]}/directory\n'
+                        f'site {name} {{ respond "ok" }}\n')
+                    for command in ['check', 'run']:
+                        with self.subTest(name=name, command=command):
+                            result = self.invoke(command, directory=directory)
+                            self.assertEqual(result.returncode, 1, result)
+                            self.assertIn('DNS names', result.stderr)
+                            self.assertNotIn('Address already in use', result.stderr)
+                            self.assertEqual(result.stdout, '')
+                            self.assertEqual(list(directory.iterdir()), [config])
+                with self.assertRaises(TimeoutError):
+                    ca.accept()
+
     def test_automatic_check_does_not_bind_contact_or_create_state(self):
         with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
             directory = pathlib.Path(temporary)

@@ -265,3 +265,16 @@ URL validation runs before automatic-mode startup side effects. This is syntax
 validation without DNS lookups or CA contact; the existing listener check still
 requires a numeric local address. Tests cover shared endpoint/URL parsing plus
 real CLI check/run with an occupied HTTP port and no state creation.
+
+## Automatic identifier classification (2026-10-16)
+
+[RFC 8738](https://www.rfc-editor.org/rfc/rfc8738.html#section-3) defines the
+separate ACME `ip` identifier type and its validation rules. Lantern's current
+client emits only `dns` identifiers and requests DNS SANs. The previous dot-only
+check admitted IPv4 site names into that flow, so check reported a configuration
+valid even though its issuance profile was wrong. Automatic-mode validation now
+rejects all-numeric dotted spellings, including legacy and zero-padded forms,
+without attempting to reinterpret them. It still accepts numeric labels within
+DNS names, and leaves plain/manual configuration unchanged. The CLI fixture
+verifies both check and run reject before state, HTTP-01 binding or CA contact.
+This fixes the diagnostic boundary; it does not implement RFC 8738 issuance.

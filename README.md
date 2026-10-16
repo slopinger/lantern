@@ -42,6 +42,11 @@ site example.com {
 }
 ```
 
+Automatic HTTPS currently supports DNS identifiers only. IPv4 and other
+all-numeric dotted site names are rejected during validation; IP-address
+issuance is not implemented. Numeric labels such as `123.example.org` are allowed.
+This restriction does not apply to plain or manual-TLS site configuration.
+
 Point public DNS at this machine and make HTTP port 80 reachable. `[::]` binds
 IPv6 and IPv4 on Linux; `0.0.0.0` is IPv4-only. For an existing HTTP front end,
 set `acme_http_port 8081` and route this site's port-80 traffic to that listener.
