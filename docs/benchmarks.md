@@ -60,3 +60,34 @@ from the October 15 baseline solely to code: this shared VM has no load or
 CPU-affinity isolation. This run does not measure TLS, ranges or cold storage.
 [Raw outputs and binary digest](benchmark-2026-10-16-static.json) include
 all trials. No wrk socket errors or unexpected response classes were reported.
+
+## Derived-header cache follow-up
+
+Server commit `4b8c238` reuses derived weak-tag/Last-Modified text and the
+per-second Date header. It still opens/confines/stats every file request,
+retains no file bytes/descriptors, and bounds metadata entries at 256 per
+routing snapshot. The identical generator/settings were run again, after
+the Nix checks completed. Start load averages were [1.38134765625, 1.18701171875, 1.63623046875].
+
+| Workload | Lantern before cache | Lantern repeat with cache | Caddy in repeat |
+| --- | ---: | ---: | ---: |
+| 4 KiB, full, requests/s | 2,681.6 | 3,547.7 | 8,175.6 |
+| 4 KiB, not-modified, requests/s | 3,352.7 | 4,656.5 | 10,572.8 |
+| 1024 KiB, full, requests/s | 503.9 | 495.6 | 717.1 |
+| 1024 KiB, not-modified, requests/s | 3,287.7 | 4,673.6 | 10,791.0 |
+
+The repeat observed higher small-file/conditional rates; full 1 MiB throughput
+was roughly unchanged (495.6 MiB/s versus 503.9). Caddy remained faster in
+every workload. These sequential shared-VM runs do not isolate all background
+load, so they do not prove that every measured difference is caused by caching.
+Both conditional paths avoided the entire representation body. No wrk socket
+errors or unexpected response classes were reported. Full 200 bytes and each
+server’s 304 behavior were checked before measurement.
+[Repeat raw outputs and binary digest](benchmark-2026-10-16-static-cache.json)
+preserve all trial rates, RSS observations and generator output.
+
+Reproduce both full and conditional cases with:
+
+```sh
+nix develop -c python test/benchmark.py --conditional --lantern ./result/bin/lantern --out benchmark.json
+```

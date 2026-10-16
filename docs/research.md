@@ -59,7 +59,7 @@ flowchart LR
   State --> TLS
 ```
 
-The HTTP library depends only on base/bytestring and owns incremental parsing,
+The HTTP library depends only on base/bytestring/time and owns incremental parsing,
 framing, chunk decoding and serialization. The TLS library owns the protocol
 state/record/key-schedule layers. Crypton provides primitives and PKIX verification;
 we do not rewrite AES, SHA-256, X25519 or RSA. The server owns configuration,
