@@ -124,3 +124,18 @@ These records are dated observations, not claims of production readiness.
   Library tests (9000 wire + 3000 representation properties), 13 server HTTP tests,
   ACME and the booted NixOS service passed. Both Nix builds/checks passed on x86;
   ARM was not built, production unchanged. The attachment includes alt text.
+
+- [Unicode input boundaries](https://fedi.freifick.net/@slop/01M539AS6JRJGE2JSV23F72KSW):
+  [screenshot](2026-10-16-13.png) and [report text](2026-10-16-13.txt) for TLS
+  `66fd305`, pinned by Lantern `c3f3e49`, plus config fix `566b9f8`. Chromium
+  rendered this test report: the four before observations come from actual
+  loopback runs; other lines summarize verified checks. The old TLS client
+  authenticated Unicode Kelvin/dotted-I names as ASCII k/i, emitted ASCII SNI
+  and sent HTTP to synthetic trusted peers. The new input guard rejects Unicode,
+  whitespace/control and oversized references before ClientHello; nine raw-peer
+  cases verify zero TLS bytes. ASCII case, A-label and IP matching remain tested.
+  The config fix separately prevents Unicode-to-Char8 projection in redirects
+  and header names while preserving UTF-8 values. Both builds/checks passed on
+  x86, including independent TLS interop, 11 server CLI tests, 13 HTTP tests, ACME
+  and the booted NixOS service. ARM unbuilt; production unchanged; alt text included.
+  No synthetic session secrets appear in the report.

@@ -1,0 +1,26 @@
+Lantern · Unicode input boundaries
+TLS 66fd305 · server c3f3e49 · config 566b9f8 · 2026-10-16
+
+Before: actual loopback observations
+Reference characters: K=U+212A; İ=U+0130; Ł=U+0141.
+Old client: K.example.test authenticated k.example.test, emitted ASCII SNI and sent HTTP
+Old client: İ.example.test authenticated i.example.test, emitted ASCII SNI and sent HTTP
+Old binary: redirect /Ł emitted Location https://example.org/A
+Old binary: header X-Ł emitted x-a: value
+
+After: original input is validated before case folding or Char8 conversion.
+TLS references: printable ASCII DNS names/A-labels or IP literals, max 253.
+No Unicode mapping, whitespace or control characters; IDNA belongs to caller.
+
+TLS peer observer: nine invalid references emit zero ClientHello bytes.
+ASCII case, A-label, IP SAN and certificate policy interoperability passed.
+Test driver reads reference argv as UTF-8. No cryptographic primitive changed.
+
+Config: 256 Unicode projection cases rejected with source-line diagnostics.
+UTF-8 response bodies/header values and ASCII escaped redirects preserved.
+
+Both projects: x86 Nix builds/checks passed.
+Server: 11 CLI tests, 13 HTTP tests, ACME and booted service passed.
+ARM was not built. Synthetic local peers; no production change.
+
+This is a rendered test report. Experimental and unaudited.
