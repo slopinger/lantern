@@ -278,3 +278,19 @@ without attempting to reinterpret them. It still accepts numeric labels within
 DNS names, and leaves plain/manual configuration unchanged. The CLI fixture
 verifies both check and run reject before state, HTTP-01 binding or CA contact.
 This fixes the diagnostic boundary; it does not implement RFC 8738 issuance.
+
+## Configuration text at ASCII wire boundaries (2026-10-16)
+
+[RFC 9110 section 5.1](https://www.rfc-editor.org/rfc/rfc9110.html#section-5.1)
+defines field names as tokens. Redirects use the documented ASCII URI profile
+from [RFC 3986](https://www.rfc-editor.org/rfc/rfc3986.html). The parser previously
+converted Unicode strings through ByteString.Char8 before validation, so an
+unsupported character could become a different accepted ASCII byte (Ł -> A).
+A loopback run of the old binary confirmed `/Ł` emitted a Location ending in `/A`,
+and `X-Ł` emitted the header name `x-a`. Both redirect URLs and header names now
+reject non-ASCII before conversion, with
+source-position diagnostics. Bodies and header values retain UTF-8 encoding;
+ASCII percent escapes remain untouched. Tests enumerate the first 128 Latin
+extension code points for each boundary, plus positive byte preservation and
+real CLI check/run failures. This is configuration fidelity, not a new URI/IRI
+normalization or arbitrary header-field semantics implementation.

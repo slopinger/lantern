@@ -55,6 +55,25 @@ class Tests(unittest.TestCase):
             self.assertIn('missing-ä.conf'.encode(), result.stderr)
             self.assertNotIn(b'HasCallStack', result.stderr)
 
+    def test_ascii_wire_fields_reject_unicode_without_projection(self):
+        with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
+            directory = pathlib.Path(temporary)
+            config = directory/'Lanternfile'
+            for directive in ['redirect https://example.org/Ł',
+                              'respond ok header X-Ł value']:
+                config.write_text('site localhost { '+directive+' }\n')
+                for command in ['check', 'run']:
+                    with self.subTest(directive=directive, command=command):
+                        result = self.invoke(command, directory=directory)
+                        self.assertEqual(result.returncode, 1, result)
+                        self.assertIn('ASCII', result.stderr)
+                        self.assertIn('line 1', result.stderr)
+                        self.assertEqual(result.stdout, '')
+            config.write_text('site localhost { respond "héllo" header X-Text "välue" }\n')
+            result = self.invoke('check', directory=directory)
+            self.assertEqual((result.returncode, result.stdout, result.stderr),
+                             (0, 'configuration valid\n', ''))
+
     def test_argument_errors_keep_exit_status_and_one_diagnostic(self):
         for arguments in [['nonsense'], ['run', '--config'], ['check', '--bogus'], ['check', '--config='],
                           ['help', 'nonsense'], ['version', '--bogus']]:

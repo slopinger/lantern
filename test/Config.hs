@@ -2,6 +2,8 @@
 module Main (main) where
 import Control.Monad (unless,forM_)
 import Data.List (isInfixOf)
+import Data.Char (chr)
+import qualified Data.Text.Encoding as TE
 import qualified Data.ByteString as B
 import qualified Data.Text as T
 import qualified Data.Map.Strict as M
@@ -41,6 +43,18 @@ main=do
   forM_ ["123.example.org","1.2.example.org","example2026.org"] $ \name ->
     check "numeric DNS label rejected" (case parseConfig "test" ("auto_https a@b ./state site " ++ name ++ " { respond ok }") of
       Right _ -> True; Left _ -> False)
+  -- Char8 projection must not turn Unicode into an accepted ASCII wire field.
+  forM_ [chr (256+n) | n <- [0..127]] $ \character ->
+    forM_ ["redirect https://example.org/" ++ [character],
+           "respond ok header X-" ++ [character] ++ " value"] $ \directive ->
+      check "Unicode wire field accepted/projected" (case parseConfig "test" ("site localhost { " ++ directive ++ " }") of
+        Left message -> "ASCII" `isInfixOf` message
+        Right _ -> False)
+  unicode <- either fail pure (parseConfig "test" "site localhost { respond héllo header X-Text välue }")
+  check "UTF-8 body and header value preserved" (sites unicode ==
+    [Site "localhost" (Respond (TE.encodeUtf8 "héllo")) [("x-text",TE.encodeUtf8 "välue")]])
+  escaped <- either fail pure (parseConfig "test" "site localhost { redirect https://example.org/%C5%81 }")
+  check "ASCII percent-encoded redirect preserved" (map siteAction (sites escaped) == [Redirect "https://example.org/%C5%81"])
   forM_ [("localhost:8080",Endpoint "localhost" 8080),
       ("EXAMPLE.org:443",Endpoint "EXAMPLE.org" 443),
       ("192.0.2.1:80",Endpoint "192.0.2.1" 80),

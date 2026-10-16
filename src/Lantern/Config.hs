@@ -90,9 +90,14 @@ entry = do
             Left e -> fail e
             Right ep -> pure (Left (Proxy ep))
         "respond" -> Left . Respond . TE.encodeUtf8 . T.pack <$> word
-        "redirect" -> Left . Redirect . C.pack <$> word
+        "redirect" -> do
+          url <- word
+          unless (all isAscii url) (fail "redirect URLs must use ASCII; percent-encode Unicode")
+          pure (Left (Redirect (C.pack url)))
         "header" -> do
-          k <- word; v <- word
+          k <- word
+          unless (all isAscii k) (fail "header names must use ASCII")
+          v <- word
           pure (Right (lower (C.pack k),TE.encodeUtf8 (T.pack v)))
         _ -> fail ("unknown site directive: " ++ key)
     upstream s

@@ -217,3 +217,10 @@ before state creation, binding or CA requests. Numeric labels inside a DNS name
 remain valid. This restriction is automatic-mode-only; plain/manual site parsing
 keeps its existing numeric-host support. CLI regression observes an occupied
 HTTP port and dummy CA to verify diagnostic ordering and absence of side effects.
+
+Redirect URLs and response header names must be ASCII before Char8 conversion.
+Reject non-ASCII input rather than projecting each code point to its low byte;
+this prevents silent aliasing (for example Ł -> A). Redirects may contain literal
+ASCII percent escapes. Response bodies and header values still encode UTF-8.
+Tests enumerate 128 Latin-extension projection cases for each field, verify
+positive UTF-8/escaped values and exercise actual CLI check/run diagnostics.

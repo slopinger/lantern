@@ -97,6 +97,11 @@ site old.example.com {
 }
 ```
 
+Redirect URLs and response header names must be ASCII. Percent-encode Unicode
+in redirect paths and use DNS A-labels for internationalized hosts. Bodies and
+header values retain UTF-8 text. Unsupported Unicode wire fields fail validation
+with a source line instead of silently changing characters.
+
 Quoted values support spaces, escaped quotes and backslashes. `#` starts a comment
 outside quotes. Unknown directives, duplicate global directives, duplicate hosts,
 multiple actions, and unsafe response headers fail validation. DNS names use
