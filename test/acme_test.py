@@ -214,11 +214,13 @@ def main():
                'http_port':http_port,'ca_key':ca_key,'ca_cert':ca_cert,'errors':[],'challenge_fetches':0}
         CA.state=state
         threading.Thread(target=https.serve_forever,daemon=True).start()
+        (d/'reload-roots.pem').write_bytes((d/'root.pem').read_bytes())
         cfg=f'''listen 127.0.0.1:{port}
 acme_http_port {http_port}
 auto_https test@example.com ./state
 acme_ca {state['base']}/directory
 acme_ca_bundle ./root.pem
+proxy_ca_bundle ./reload-roots.pem
 site {state['name']} {{ respond "ACME works" }}
 '''
         server=None
@@ -229,29 +231,93 @@ site {state['name']} {{ respond "ACME works" }}
             assert state['bad_nonce_done'] and state['orders']==1 and state['challenge_fetches']==1
             assert not state['errors'],state['errors']
             pem=d/'state'/'chain.pem'
-            original=x509.load_pem_x509_certificate(pem.read_bytes()).serial_number
+            original_chain = pem.read_bytes()
+            original=x509.load_pem_x509_certificate(original_chain).serial_number
             key_bytes=(d/'state'/'site-key.pem').read_bytes()
             verify=ssl.create_default_context(cafile=str(d/'root.pem'));verify.set_ecdh_curve('X25519')
+            observed_headers = []
             def fetch():
                 with socket.create_connection(('127.0.0.1',port),timeout=4) as raw:
                     with verify.wrap_socket(raw,server_hostname=state['name']) as s:
                         s.sendall(f"GET / HTTP/1.1\r\nHost: {state['name']}\r\nConnection: close\r\n\r\n".encode())
                         r=http.client.HTTPResponse(s);r.begin();assert r.status==200 and r.read()==b'ACME works'
+                        observed_headers.append(r.getheader('X-Reload'))
                         return x509.load_der_x509_certificate(s.getpeercert(binary_form=True)).serial_number
             assert fetch()==original
             server.close();server=Running(d,cfg,port)
             assert state['orders']==1 and fetch()==original,'cached restart placed another order'
-            server.proc.send_signal(signal.SIGUSR1)
-            wait_for(lambda:'renewed certificate activated' in server.logfile.read_text())
+            # Pause a routing reload in trust-file I/O while renewal publishes
+            # a new certificate. A stale staged snapshot must not roll it back.
+            trust_path = d/'reload-roots.pem'
+            trust_path.unlink()
+            os.mkfifo(trust_path)
+            trust_writer = os.open(trust_path, os.O_RDWR | os.O_NONBLOCK)
+            reload_count = server.logfile.read_text().count('configuration reloaded')
+            server.file.write_text(cfg.replace('respond "ACME works"',
+                'respond "ACME works" header X-Reload "concurrent"'))
+            server.proc.send_signal(signal.SIGHUP)
+            def reload_is_blocked():
+                for descriptor in pathlib.Path(f'/proc/{server.proc.pid}/fd').iterdir():
+                    try:
+                        if os.readlink(descriptor) == str(trust_path):
+                            return True
+                    except FileNotFoundError:
+                        pass
+                return False
+            try:
+                wait_for(reload_is_blocked, timeout=3)
+                server.proc.send_signal(signal.SIGUSR1)
+                wait_for(lambda:'renewed certificate activated' in server.logfile.read_text())
+                interim = x509.load_pem_x509_certificate(pem.read_bytes()).serial_number
+                assert interim != original and fetch() == interim
+                assert observed_headers[-1] is None, 'reload published before trust preparation finished'
+                os.write(trust_writer, (d/'root.pem').read_bytes())
+            finally:
+                os.close(trust_writer)
+            wait_for(lambda: server.logfile.read_text().count('configuration reloaded') > reload_count)
+            assert fetch() == interim, 'routing reload rolled back renewed certificate'
+            assert observed_headers[-1] == 'concurrent', 'renewal lost the reloaded routes'
+            trust_path.unlink()
+            trust_path.write_bytes((d/'root.pem').read_bytes())
             renewed=x509.load_pem_x509_certificate(pem.read_bytes()).serial_number
             assert renewed!=original and fetch()==renewed
             assert (d/'state'/'site-key.pem').read_bytes()==key_bytes
             assert state['orders']==2 and state['challenge_fetches']==2
+            # Reloads must retain active automatic credentials, regardless of
+            # missing, stale or malformed persisted certificate files.
+            active_chain = pem.read_bytes()
+            initial_chain = original_chain
+            try:
+                for label, content in [('missing', None), ('stale', initial_chain), ('malformed', b'invalid PEM')]:
+                    if content is None:
+                        pem.unlink()
+                    else:
+                        pem.write_bytes(content)
+                        pem.chmod(0o600)
+                    before = server.logfile.read_text().count('configuration reloaded')
+                    server.file.write_text(cfg.replace('respond "ACME works"',
+                        f'respond "ACME works" header X-Reload "{label}"'))
+                    server.proc.send_signal(signal.SIGHUP)
+                    wait_for(lambda: server.logfile.read_text().count('configuration reloaded') > before)
+                    with socket.create_connection(('127.0.0.1', port), timeout=3) as plain:
+                        plain.sendall(f'GET / HTTP/1.1\r\nHost: {state["name"]}\r\nConnection: close\r\n\r\n'.encode())
+                        plain.shutdown(socket.SHUT_WR)
+                        try:
+                            reply = plain.recv(64)
+                        except ConnectionResetError:
+                            reply = b''
+                    assert not reply.startswith(b'HTTP/'), ('HTTPS downgraded to plaintext after reload', label)
+                    assert fetch() == renewed, ('reload lost active certificate', label)
+                    assert observed_headers[-1] == label, ('route reload did not apply', label)
+            finally:
+                pem.write_bytes(active_chain)
+                pem.chmod(0o600)
+            print('Automatic reload passed: concurrent renewal, missing/stale/malformed cache, HTTPS-only listener')
             state['fail_next']=True
             server.proc.send_signal(signal.SIGUSR1)
             wait_for(lambda:'renewal failed' in server.logfile.read_text())
             assert fetch()==renewed and x509.load_pem_x509_certificate(pem.read_bytes()).serial_number==renewed
-            assert (d/'state'/'retry-until').exists()
+            assert (d/'state'/'retry-until').exists(), server.logfile.read_text()
             assert not (d/'state'/'pending-chain.pem').exists()
             orders=state['orders']
             server.proc.send_signal(signal.SIGUSR1);time.sleep(.2)

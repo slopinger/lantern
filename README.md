@@ -62,7 +62,10 @@ site keys are separate and persist across restarts. Certificates are renewed at
 two-thirds of their actual lifetime, checked on startup and every six hours.
 **SIGUSR1** requests immediate renewal in automatic mode. Credentials activate
 without restarting listeners; failures preserve the working chain and credentials.
-Retry-After/backoff survives restarts. Keep state out of git and back it up privately.
+Retry-After/backoff survives restarts. In automatic mode, route reloads retain the
+latest active in-memory certificate; certificate activation belongs to renewal.
+Missing or stale cache files cannot turn a running HTTPS listener into plaintext
+or roll its certificate back during a reload. Keep state out of git and back it up privately.
 Changing automatic certificate hostnames, listener/TLS paths/mode, CA, or resource
 limits requires a restart; route and header changes can reload.
 

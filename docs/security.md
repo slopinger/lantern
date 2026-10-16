@@ -152,3 +152,12 @@ Worker cleanup cannot overtake registration. A socket rejected or interrupted
 before transfer of ownership closes; accepted workers own closure and removal.
 The ACME fixture tests 400 paired HTTP/TLS arrivals at max_connections=1, requiring
 at most one peer to receive protocol bytes and continued successful admissions.
+
+Automatic-mode reload stages routes/trust/cache only. It atomically preserves the
+current in-memory credentials rather than re-reading the ACME disk cache; renewal
+atomically replaces credentials while preserving the latest routing/trust/cache.
+Missing, stale or malformed cached certificate files cannot clear or roll back
+active credentials during SIGHUP. TLS-mode listeners fail closed if credentials
+are unavailable; only plain mode and the HTTP-01 listener select plain transport.
+The ACME fixture pauses reload in trust-file I/O while renewal activates, then
+checks the new certificate and new routes both survive, plus cache-fault cases.

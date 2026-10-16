@@ -162,8 +162,16 @@ reloadConfig file original state = do
   result <- try $ do
     cfg <- loadConfig file
     unless (immutable cfg original) $ fail "listener/TLS mode/resource changes require a restart"
-    next <- prepare cfg
-    atomicWriteIORef state next
+    case tlsMode cfg of
+      Automatic{} -> do
+        -- Renewal owns automatic credentials. Reload stages only routing/trust,
+        -- then preserves the latest credentials at the atomic publication point.
+        -- Reading the disk cache here could clear or roll back a live certificate.
+        roots <- prepareProxyTrust cfg
+        cache <- newStaticCache
+        atomicModifyIORef' state $ \(Snapshot _ active _ _) ->
+          (Snapshot cfg active roots cache,())
+      _ -> prepare cfg >>= atomicWriteIORef state
   case result of
     Left (e :: SomeException) -> case fromException e :: Maybe AsyncException of
       Just async -> throwIO async
@@ -186,7 +194,8 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
                   Snapshot _ creds _ _ <- readIORef state
                   transport <- case (challenges,creds) of
                     (Just _,_) -> pure (plainTransport socket')
-                    (_,Nothing) -> pure (plainTransport socket')
+                    (_,Nothing) | tlsMode cfg == Plain -> pure (plainTransport socket')
+                    (_,Nothing) -> fail "TLS listener has no active credentials"
                     (_,Just _) -> tlsTransport (do
                       Snapshot _ c _ _ <- readIORef state
                       maybe (fail "missing TLS credentials") pure c) socket'
