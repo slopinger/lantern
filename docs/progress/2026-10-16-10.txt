@@ -1,0 +1,16 @@
+Lantern certificate lifecycle checks — 2026-10-16
+
+Automatic reload passed: concurrent renewal, missing/stale/malformed cache, HTTPS-only listener
+
+ACME rejected future-dated issuance without replacing active or persisted credentials
+
+Shared admission passed: 400 simultaneous HTTP/TLS arrivals, 400 rounds with service
+
+ACME replaced future-dated cached credentials before opening HTTPS
+
+ACME fixture passed: JWS signatures, nonces/badNonce retry, HTTP-01 fetch, CSR/SAN verification, issuance, cached restart, live renewal, failed-renewal rollback, persisted Retry-After, private state
+
+Source: actual x86_64-linux nix flake check output.
+Old binary regression: AssertionError: future-dated issuance activated
+Nix build and flake checks passed. ARM was not built.
+Experimental software; no live service was changed.

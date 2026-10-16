@@ -89,3 +89,13 @@ These records are dated observations, not claims of production readiness.
   x86_64 Nix build/checks passed, including slow-reader deadlines, 80 aborted
   transfers, range/confinement, TLS proxy and ACME checks. ARM was not built.
   Posting credentials were revoked and the temporary OAuth app was removed.
+
+- [Certificate reload and validity fixes](https://fedi.freifick.net/@slop/01M5360MZ0Z0F8069QABKW0X3Z):
+  [screenshot](2026-10-16-10.png) and [captured text](2026-10-16-10.txt) from
+  actual x86_64-linux flake integration output for Lantern `4d04675` (including
+  reload fix `548484c`). Chromium rendered this test report from output excerpts;
+  the old-binary failure and build/scope lines are labelled summaries. The fixture
+  verifies concurrent reload/renewal, cache faults without plaintext downgrade,
+  future-dated issuance rollback, startup replacement of a future-dated cache,
+  and 400 paired shared-admission rounds. Nix build/checks passed; ARM was not
+  built. No live service changed. Alt text accompanies the public attachment.
