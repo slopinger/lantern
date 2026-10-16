@@ -199,3 +199,16 @@ seconds for two worker threads, within the kernel tick resolution.
 [Conditional baseline](benchmark-2026-10-16-conditional-cpu-before.json) and
 [combined](benchmark-2026-10-16-conditional-cpu-after.json) preserve all trials.
 Use `test/benchmark.py --conditional-only` to reproduce that workload selection.
+
+## HTTP line fragmentation, 2026-10-16
+
+The independent HTTP library now avoids repeated copying and rescanning of a
+pending line. Its [parser experiment](https://git.freifick.net/slop/lantern-http/-/blob/main/docs/fragmentation.md)
+uses a verified 8135-byte request with one-byte, 128-byte and whole-buffer
+receives. Three alternating revision pairs show about 95% lower allocation and
+a large CPU reduction for single-byte fragmentation; the coalesced long-line
+control used about 2.4% more CPU and 48 additional allocated bytes/request.
+All initial, prototype and final trials are retained in that report's JSON.
+This is parser work without sockets/TLS/files, not a new Lantern/Caddy throughput
+comparison or a peak-memory measurement. Fragment metadata remains bounded by
+the line's byte limit; absolute deadlines/admission remain necessary.

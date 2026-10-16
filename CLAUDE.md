@@ -165,3 +165,11 @@ fallback. See [systemd's upstream discussion](https://github.com/systemd/systemd
   Automatic-mode run validates the complete CA URL before creating state or
   binding HTTP-01, matching check. CLI regression uses an occupied HTTP port to
   prove invalid CA syntax is diagnosed first, with no state directory created.
+
+HTTP line parsing uses the independent library's bounded fragment accumulation
+and new-byte/CRLF-boundary search, avoiding quadratic prefix copying/scanning.
+Complete-buffer lines retain a direct slice path. Error/cancellation requires
+connection closure; deadlines and admission are still mandatory. The HTTP flake
+adds exact/overflow line and irregular request/body/pipeline regressions (9000
+wire properties plus 3000 representation cases). See the library's fragmentation
+report for raw parser CPU/allocation trials and the coalesced-control tradeoff.

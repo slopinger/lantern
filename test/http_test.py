@@ -252,6 +252,28 @@ site redirect.local {{ redirect https://example.com/fixed }}
         self.assertEqual(result[2], b'abcde')
         self.assertNotIn('transfer-encoding', result[1])
 
+    def test_long_fragmented_lines_preserve_next_request(self):
+        target = b'/' + b'a'*8178
+        wire = (b'GET ' + target + b' HTTP/1.1\r\nHost: text.local\r\nX: ' +
+                b'b'*8189 + b'\r\n\r\nGET / HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n')
+        # Send granularity does not assert the kernel's receive boundaries;
+        # the independent library also tests deterministic irregular splits.
+        for width in [1, 127]:
+            with self.subTest(width=width):
+                with socket.create_connection(('127.0.0.1', self.port), timeout=4) as peer:
+                    for offset in range(0, len(wire), width):
+                        peer.sendall(wire[offset:offset+width])
+                    output = b''
+                    while True:
+                        part = peer.recv(4096)
+                        if not part:
+                            break
+                        output += part
+                    self.assertEqual(output.count(b'HTTP/1.1 200 OK'), 2)
+                    self.assertEqual(output.count(b'hello text'), 2)
+        overflow = b'GET /' + b'a'*8179 + b' HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n'
+        self.assertEqual(self.server.raw(overflow)[0], 431)
+
     def test_reload_preserves_old_on_error(self):
         self.server.file.write_text(self.config.replace('hello text','new text'))
         self.server.proc.send_signal(signal.SIGHUP)
