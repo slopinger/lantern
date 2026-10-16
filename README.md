@@ -96,7 +96,8 @@ support HTTP/1.1 keep-alive and pipelining. HTTP/1.0 has a strict limited profil
 | `auto_https EMAIL STATE_DIR` | Own ACME HTTP-01 automation |
 | `acme_ca HTTPS_URL` | Let's Encrypt production directory |
 | `acme_http_port PORT` | 80; separate HTTP-01/redirect listener |
-| `acme_ca_bundle FILE` | Explicit CA trust roots; default system trust |
+| `acme_ca_bundle FILE` | Explicit ACME CA trust roots; default system trust |
+| `proxy_ca_bundle FILE` | Trust roots for all HTTPS upstreams; default system trust |
 
 Static files stream in 64 KiB pieces. `/` and `/directory/` select `index.html`.
 There is no directory listing, hidden-file serving, or symlink following. Linux
@@ -104,7 +105,15 @@ There is no directory listing, hidden-file serving, or symlink following. Linux
 symlink replacement races. Publish into operator-controlled roots with atomic
 file/release replacement; do not rewrite a streamed file in place.
 
-Reverse proxy upstreams are fixed `http://host:port` endpoints. Client-supplied
+Reverse proxy upstreams are fixed `http://host:port` or `https://host:port`
+endpoints (explicit ports, no paths or credentials). HTTPS uses Lantern's own TLS
+client, verifies the configured host against its certificate SANs and trust roots,
+and sends HTTP only after authentication. `proxy_ca_bundle` replaces system roots
+for every HTTPS upstream, independently of ACME trust. It is resolved relative to
+the Lanternfile and loaded once per routing snapshot; SIGHUP reloads its contents
+atomically. Changing the configured bundle path requires a restart. TLS failures
+return 502 before response headers; later failures close the downstream stream.
+ Client-supplied
 forwarding identity is replaced with the actual peer and selected host/scheme.
 Hop-by-hop fields are removed in both directions. Requests are bounded and
 buffered; responses stream with backpressure. One upstream connection per request,
@@ -112,7 +121,7 @@ no implicit proxies, redirects, pooled connections, or request retries. A global
 64 MiB reservation budget bounds concurrent request-body memory; excess body
 requests get 503. Known upstream responses over 1 GiB are rejected before headers.
 
-Not included: HTTP/2/3, WebSockets/CONNECT, HTTPS upstreams, compression, range or
+Not included: HTTP/2/3, WebSockets/CONNECT, compression, range or
 conditional-file handling, directory-slash redirects, wildcard hosts, DNS-01,
 external-account binding, ACME revocation/account rotation, or configurable route
 matchers. This is not a complete Caddy replacement.

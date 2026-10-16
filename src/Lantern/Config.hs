@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Lantern.Config
-  ( Config(..), Site(..), Action(..), TLSMode(..), Endpoint(..)
+  ( Config(..), Site(..), Action(..), TLSMode(..), Endpoint(..), Upstream(..)
   , loadConfig, parseConfig, parseEndpoint, hostName, immutable
   ) where
 import Control.Monad (unless, when)
@@ -20,18 +20,19 @@ import Lantern.HTTP (validToken, lower)
 
 data Endpoint = Endpoint { endpointHost :: String, endpointPort :: Int } deriving (Eq, Show)
 data TLSMode = Plain | Manual FilePath FilePath | Automatic String FilePath deriving (Eq, Show)
-data Action = Root FilePath | Proxy Endpoint | Respond B.ByteString | Redirect B.ByteString deriving (Eq, Show)
+data Upstream = HTTP Endpoint | HTTPS Endpoint deriving (Eq, Show)
+data Action = Root FilePath | Proxy Upstream | Respond B.ByteString | Redirect B.ByteString deriving (Eq, Show)
 data Site = Site { siteHost :: B.ByteString, siteAction :: Action, siteHeaders :: [(B.ByteString,B.ByteString)] } deriving (Eq, Show)
 data Config = Config
   { listen :: Endpoint, tlsMode :: TLSMode, sites :: [Site]
   , maxConnections :: Int, headerSeconds :: Int, bodySeconds :: Int
   , writeSeconds :: Int, bodyLimit :: Integer
-  , acmeCA :: B.ByteString, acmeHTTPPort :: Int, acmeTrust :: Maybe FilePath
+  , acmeCA :: B.ByteString, acmeHTTPPort :: Int, acmeTrust :: Maybe FilePath, proxyTrust :: Maybe FilePath
   } deriving (Eq, Show)
 
 data Entry = Listen String | TLS String String | Auto String String
   | Connections Int | HeaderTime Int | BodyTime Int | WriteTime Int | BodyLimit Int
-  | CA String | HTTPPort Int | Trust String | Virtual Site deriving Show
+  | CA String | HTTPPort Int | Trust String | ProxyTrust String | Virtual Site deriving Show
 
 spaceP :: Parser ()
 spaceP = skipMany (skipMany1 (oneOf " \t\r\n") <|> (char '#' *> skipMany (noneOf "\n")))
@@ -61,6 +62,7 @@ entry = do
     "acme_ca" -> CA <$> word
     "acme_http_port" -> HTTPPort <$> number
     "acme_ca_bundle" -> Trust <$> word
+    "proxy_ca_bundle" -> ProxyTrust <$> word
     "site" -> do
       name <- word
       unless (all isAscii name) (fail "site names must use ASCII DNS A-labels")
@@ -81,7 +83,7 @@ entry = do
         "root" -> Left . Root <$> word
         "reverse_proxy" -> do
           url <- word
-          case stripHTTP url >>= parseEndpoint of
+          case upstream url of
             Left e -> fail e
             Right ep -> pure (Left (Proxy ep))
         "respond" -> Left . Respond . TE.encodeUtf8 . T.pack <$> word
@@ -90,9 +92,10 @@ entry = do
           k <- word; v <- word
           pure (Right (lower (C.pack k),TE.encodeUtf8 (T.pack v)))
         _ -> fail ("unknown site directive: " ++ key)
-    stripHTTP s = case splitAt 7 s of
-      ("http://",a) -> Right a
-      _ -> Left "upstreams must be explicit http://host:port endpoints (no paths or credentials)"
+    upstream s
+      | take 7 s == "http://" = HTTP <$> parseEndpoint (drop 7 s)
+      | take 8 s == "https://" = HTTPS <$> parseEndpoint (drop 8 s)
+      | otherwise = Left "upstreams must be explicit HTTP(S) host:port endpoints (no paths or credentials)"
 
 parseEndpoint :: String -> Either String Endpoint
 parseEndpoint s = do
@@ -124,7 +127,7 @@ hostName raw = do
 parseConfig :: FilePath -> String -> Either String Config
 parseConfig name input = do
   entries <- either (Left . show) Right (parse (spaceP *> many entry <* eof) name input)
-  let initial = Config (Endpoint "127.0.0.1" 8080) Plain [] 256 10 30 30 1048576 "https://acme-v02.api.letsencrypt.org/directory" 80 Nothing
+  let initial = Config (Endpoint "127.0.0.1" 8080) Plain [] 256 10 30 30 1048576 "https://acme-v02.api.letsencrypt.org/directory" 80 Nothing Nothing
   config <- foldEntries initial [] entries
   when (null (sites config)) $ Left "at least one site is required"
   when (length (sites config) > 100) $ Left "at most 100 sites"
@@ -146,7 +149,7 @@ parseConfig name input = do
             Listen{} -> "listen"; TLS{} -> "tls"; Auto{} -> "tls"
             Connections{} -> "max_connections"; HeaderTime{} -> "header_timeout"
             BodyTime{} -> "body_timeout"; WriteTime{} -> "write_timeout"
-            BodyLimit{} -> "body_limit"; CA{} -> "acme_ca"; HTTPPort{} -> "acme_http_port"; Trust{} -> "acme_ca_bundle"; Virtual{} -> "site"
+            BodyLimit{} -> "body_limit"; CA{} -> "acme_ca"; HTTPPort{} -> "acme_http_port"; Trust{} -> "acme_ca_bundle"; ProxyTrust{} -> "proxy_ca_bundle"; Virtual{} -> "site"
       when (tag /= "site" && tag `elem` seen) $ Left ("duplicate directive: " ++ tag)
       c' <- case e of
         Listen s -> (\ep -> c {listen=ep}) <$> parseEndpoint s
@@ -167,6 +170,7 @@ parseConfig name input = do
         HTTPPort n | n <= 65535 -> Right c {acmeHTTPPort=n}
                    | otherwise -> Left "acme_http_port must be <= 65535"
         Trust path -> Right c {acmeTrust=Just path}
+        ProxyTrust path -> Right c {proxyTrust=Just path}
         Virtual site -> Right c {sites=sites c ++ [site]}
       foldEntries c' (tag:seen) rest
     validateSite s = do
@@ -203,7 +207,7 @@ loadConfig file = do
     Manual c k -> pure (Manual (resolve c) (resolve k))
     Automatic email dir -> Automatic email <$> makeAbsolute (resolve dir)
     Plain -> pure Plain
-  pure cfg {sites=resolved,tlsMode=mode,acmeTrust=resolve <$> acmeTrust cfg}
+  pure cfg {sites=resolved,tlsMode=mode,acmeTrust=resolve <$> acmeTrust cfg,proxyTrust=resolve <$> proxyTrust cfg}
 
 -- Listener and resource limits stay fixed; reload changes immutable route snapshots.
 immutable :: Config -> Config -> Bool

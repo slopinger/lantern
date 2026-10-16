@@ -18,11 +18,13 @@ main=do
   cfg <- either fail pure (parseConfig "test" "listen 127.0.0.1:8080 site localhost { respond \"hello world\" }")
   check "listen parsed" (listen cfg==Endpoint "127.0.0.1" 8080)
   check "body default" (bodyLimit cfg==1048576)
+  httpsCfg<-either fail pure (parseConfig "test" "site localhost { reverse_proxy https://upstream:443 }")
+  check "HTTPS upstream parsed" (map siteAction (sites httpsCfg)==[Proxy (HTTPS (Endpoint "upstream" 443))])
   forM_ ["", "unknown x", "site localhost { nonsense x }", "site localhost { respond a root b }",
       "site localhost { }", "site localhost { respond x } site localhost { respond y }",
       "site LOCALHOST { respond x } site localhost { respond y }",
       "site localhost { header Content-Length 5 respond x }", "listen 0.0.0.0:99999 site a { respond x }",
-      "site a { reverse_proxy https://upstream:443 }", "site a { reverse_proxy http://user@upstream:80 }",
+      "site a { reverse_proxy https://upstream:443/path }", "site a { reverse_proxy http://user@upstream:80 }",
       "site bad/host { respond x }", "site a { header X-A a header X-A b respond c }",
       "max_connections 99999 site a { respond x }", "body_limit 999999999 site a { respond x }",
       "site localhost { respond a } tls a b auto_https a@b c", "auto_https a@b c site localhost { respond x }"] $ \bad ->

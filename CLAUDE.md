@@ -24,3 +24,10 @@
 
 - ACME URL parser preserves original JWS URLs, compares hostnames case-insensitively,
   handles query-only targets and IPv6 authorities, and rejects malformed escapes.
+
+- Reverse proxies support fixed HTTP or authenticated HTTPS endpoints. Global
+  proxy_ca_bundle replaces roots only for upstream TLS, resolved config-relative,
+  loaded once per routing snapshot and refreshed on SIGHUP. Bundle-path changes
+  require restart; failed refresh preserves the prior routes and trust roots.
+- test/https_proxy_test.py uses disposable Python/OpenSSL peers for successful
+  RSA/ECDSA streaming and trust/name/expiry/version rejection; it sends no live traffic.

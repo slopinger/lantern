@@ -4,7 +4,8 @@ module Lantern.Transport
   ( Transport(..), plainTransport, tlsTransport, loadCredentials, openListener
   , withUpstream, withSocket, deadline, peerIP
   ) where
-import Control.Exception (bracket, bracketOnError, catch, IOException)
+import Control.Exception (bracket, bracketOnError, catch, catches, Handler(..), IOException)
+import Control.Monad (void)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import Network.Socket
@@ -13,7 +14,7 @@ import qualified Network.Socket.ByteString as N
 import qualified Lantern.TLS as TLS
 import Lantern.TLS (Credentials)
 import System.Timeout (timeout)
-import Lantern.Config (Endpoint(..))
+import Lantern.Config (Endpoint(..),Upstream(..))
 import Lantern.HTTP (failHTTP)
 
 data Transport = Transport { receive :: IO B.ByteString, transmit :: B.ByteString -> IO (), finish :: IO () }
@@ -42,8 +43,17 @@ openListener (Endpoint host port) = do
       listen s 256
       pure s
 
-withUpstream :: Endpoint -> (Transport -> IO a) -> IO a
-withUpstream endpoint action = withSocket endpoint (action . plainTransport)
+withUpstream :: Maybe TLS.TrustStore -> Upstream -> (Transport -> IO a) -> IO a
+withUpstream _ (HTTP endpoint) action = withSocket endpoint (action . plainTransport)
+withUpstream trust (HTTPS endpoint) action = withSocket endpoint $ \s -> do
+  roots <- maybe (failHTTP 502 "missing upstream trust store") pure trust
+  context <- TLS.connect roots (endpointHost endpoint) (N.recv s 16384) (N.sendAll s)
+  -- The enclosing socket bracket owns closure on every error path. Shutdown
+  -- after a complete framed response is best effort; async cancellation survives.
+  result <- action (Transport (TLS.receive context) (TLS.send context) (pure ()))
+  void (timeout 1000000 (TLS.close context)) `catches`
+    [Handler (\(_ :: IOException) -> pure ()), Handler (\(_ :: TLS.TLSError) -> pure ())]
+  pure result
 
 withSocket :: Endpoint -> (Socket -> IO a) -> IO a
 withSocket (Endpoint host port) action = do

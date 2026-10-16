@@ -141,3 +141,27 @@ fact that Caddy was faster. They are not WAN/TLS measurements or proof of securi
 The server remains experimental: no independent audit, full TLS feature profile,
 formal state-machine proof, coverage-guided fuzz campaign, or boot-tested NixOS
 service is claimed. See [security.md](security.md) for the exact trust boundary.
+
+## HTTPS upstream authentication (2026-10-16)
+
+[RFC 9110 section 4.3.4](https://www.rfc-editor.org/rfc/rfc9110.html#section-4.3.4)
+requires an HTTPS client to authenticate the configured origin's service identity.
+Lantern now reuses its independent TLS client for reverse proxy upstreams: the
+operator-selected endpoint supplies both the connection destination and TLS
+reference name. Host headers use the same endpoint, with IPv6 brackets. Incoming
+Host/forwarding values cannot change the TLS reference identity or roots.
+
+The client uses the SAN-only policy from
+[RFC 9525](https://www.rfc-editor.org/rfc/rfc9525.html), with exact IP SAN matching
+and one-label complete DNS wildcards. Literal IP addresses omit SNI as required by
+[RFC 6066 section 3](https://www.rfc-editor.org/rfc/rfc6066.html#section-3).
+Crypton still supplies PKIX signature/path/time/purpose verification. Its pinned
+1.6.14 default name hook was inspected and replaced because it permits Common Name
+fallback and mishandles IP-only SANs. A separate optional proxy CA bundle supports
+private origins without altering ACME or system trust. Loading it before snapshot
+publication makes a failed trust rotation preserve a working proxy.
+
+Independent Python/OpenSSL peers exercise RSA/ECDSA authenticated proxying,
+streaming/chunked responses, request echo, wrong names, unknown roots, expiry,
+TLS-version rejection and failed trust rotation. Library interoperability also
+checks CN-only rejection, IP-only SANs, wildcard depth and captured SNI.

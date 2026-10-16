@@ -29,7 +29,7 @@ import qualified Lantern.TLS as TLS
 import qualified Lantern.ACME as ACME
 
 -- One immutable snapshot per request. No routing lookup races during reload.
-data Snapshot = Snapshot Config (Maybe Credentials)
+data Snapshot = Snapshot Config (Maybe Credentials) (Maybe TLS.TrustStore)
 type Registry = MVar (Bool, M.Map ThreadId Socket)
 
 checkConfig :: FilePath -> IO ()
@@ -50,7 +50,16 @@ prepare c = do
     Plain -> pure Nothing
     Manual cert key -> Just <$> loadCredentials cert key
     Automatic{} -> ACME.cachedCredentials c
-  pure (Snapshot c creds)
+  trust <- prepareProxyTrust c
+  pure (Snapshot c creds trust)
+
+prepareProxyTrust :: Config -> IO (Maybe TLS.TrustStore)
+prepareProxyTrust c
+  | any secure (sites c) = Just <$> maybe TLS.systemTrust TLS.trustFile (proxyTrust c)
+  | otherwise = do
+      forM_ (proxyTrust c) (void . TLS.trustFile)
+      pure Nothing
+  where secure site=case siteAction site of Proxy (HTTPS _) -> True; _ -> False
 
 runServer :: FilePath -> IO ()
 runServer file = do
@@ -59,7 +68,8 @@ runServer file = do
   probeConfinement
   registry <- newMVar (False,M.empty)
   bodyBudget <- newIORef 0
-  state <- newIORef (Snapshot cfg Nothing)
+  trust <- prepareProxyTrust cfg
+  state <- newIORef (Snapshot cfg Nothing trust)
   case tlsMode cfg of
     Automatic{} -> ACME.withStateLock cfg $ do
       challenges <- ACME.newChallenges
@@ -73,7 +83,7 @@ runServer file = do
             Nothing -> do
               hPutStrLn stderr "ACME: acquiring initial certificate"
               ACME.acquire cfg challenges
-          atomicWriteIORef state (Snapshot cfg (Just creds))
+          atomicWriteIORef state (Snapshot cfg (Just creds) trust)
           renewNow <- newEmptyMVar
           withAsync (renewCertificates cfg challenges state renewNow) $ \renewWorker -> do
             link renewWorker
@@ -114,7 +124,7 @@ renewCertificates cfg challenges state queue = loop False
         when (due || force) $ do
           hPutStrLn stderr "ACME: renewing certificate"
           credentials <- ACME.acquire cfg challenges
-          atomicModifyIORef' state (\(Snapshot current _) -> (Snapshot current (Just credentials),()))
+          atomicModifyIORef' state (\(Snapshot current _ roots) -> (Snapshot current (Just credentials) roots,()))
           hPutStrLn stderr "ACME: renewed certificate activated"
       delay <- case result of
         Left (e :: SomeException) -> case fromException e :: Maybe AsyncException of
@@ -159,12 +169,12 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
       let cleanup = close socket' `finally` modifyMVar_ registry (\(s,m) -> pure (s,M.delete self m))
           task = do
             setSocketOption socket' NoDelay 1
-            Snapshot _ creds <- readIORef state
+            Snapshot _ creds _ <- readIORef state
             transport <- case (challenges,creds) of
               (Just _,_) -> pure (plainTransport socket')
               (_,Nothing) -> pure (plainTransport socket')
               (_,Just _) -> tlsTransport (do
-                Snapshot _ c <- readIORef state
+                Snapshot _ c _ <- readIORef state
                 maybe (fail "missing TLS credentials") pure c) socket'
             serveConnection cfg state peer transport challenges bodyBudget `finally` finish transport
       (unmask task `catch` quietConnection) `finally` cleanup
@@ -212,11 +222,12 @@ serveConnection limits state peer transport challenges bodyBudget = do
               [v] | lower v == "100-continue" && reqVersion req == "HTTP/1.1" -> send "HTTP/1.1 100 Continue\r\n\r\n"
               _ -> failHTTP 417 "unsupported expectation"
             body <- deadline (bodySeconds limits) 408 (collectBody reader (reqFraming req) (bodyLimit limits))
-            Snapshot current _ <- readIORef state
+            Snapshot current _ roots <- readIORef state
             host <- either (const (failHTTP 400 "invalid Host")) pure (requestHost hs)
             site <- maybe (failHTTP 421 "unknown host") pure (find ((==host) . siteHost) (sites current))
             case challenges of
-              Nothing -> deadline (writeSeconds limits) 408 (dispatch current site req body peer transport isHead closeAfter headOut send)
+              Nothing -> let code=case siteAction site of Proxy{} -> 504; _ -> 408
+                         in deadline (writeSeconds limits) code (dispatch current roots site req body peer transport isHead closeAfter headOut send)
               Just table -> do
                 unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "HTTP-01 requires GET or HEAD"
                 answer <- ACME.challengeResponse table host (reqTarget req)
@@ -273,8 +284,8 @@ simple headOut send isHead closeAfter status hs body = do
   headOut status headers
   unless isHead (send body)
 
-dispatch :: Config -> Site -> Request -> B.ByteString -> SockAddr -> Transport -> Bool -> Bool -> HeadOut -> Send -> IO ()
-dispatch cfg site req body peer _transport isHead closeAfter headOut send =
+dispatch :: Config -> Maybe TLS.TrustStore -> Site -> Request -> B.ByteString -> SockAddr -> Transport -> Bool -> Bool -> HeadOut -> Send -> IO ()
+dispatch cfg roots site req body peer _transport isHead closeAfter headOut send =
   case siteAction site of
     Respond text -> simple headOut send isHead closeAfter 200 extra text
     Redirect url -> simple headOut send isHead closeAfter 308 (("location",url):extra) "redirecting\n"
@@ -289,7 +300,7 @@ dispatch cfg site req body peer _transport isHead closeAfter headOut send =
             unless isHead (fileLoop h size)
       serve `catch` \(e :: IOException) ->
         if isDoesNotExistError e || isPermissionError e then failHTTP 404 "file not found" else throwIO e
-    Proxy endpoint -> proxyRequest cfg endpoint site req body peer isHead closeAfter headOut send
+    Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send
   where
     extra = siteHeaders site
     fileLoop h left = when (left > 0) $ do
@@ -298,13 +309,15 @@ dispatch cfg site req body peer _transport isHead closeAfter headOut send =
       send bytes
       fileLoop h (left - fromIntegral (B.length bytes))
 
-proxyRequest :: Config -> Endpoint -> Site -> Request -> B.ByteString -> SockAddr -> Bool -> Bool -> HeadOut -> Send -> IO ()
-proxyRequest cfg endpoint site req body peer isHead closeAfter headOut send = do
+proxyRequest :: Config -> Maybe TLS.TrustStore -> Upstream -> Site -> Request -> B.ByteString -> SockAddr -> Bool -> Bool -> HeadOut -> Send -> IO ()
+proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send = do
   -- The deadline covers connect, request write, headers, and the complete response.
-  deadline (writeSeconds cfg) 504 (withUpstream endpoint exchange)
-    `catch` \(_ :: IOException) -> failHTTP 502 "upstream I/O failed"
+  deadline (writeSeconds cfg) 504 (withUpstream roots upstream exchange)
+    `catches` [Handler (\(_ :: IOException) -> failHTTP 502 "upstream I/O failed"),
+               Handler (\(_ :: TLS.TLSError) -> failHTTP 502 "upstream TLS failed")]
   where
-    exchange upstream = do
+    endpoint=case upstream of HTTP ep -> ep; HTTPS ep -> ep
+    exchange transport = do
       let original = reqHeaders req
           safe = filter (\(k,_) -> k `notElem` ["host","forwarded","x-forwarded-for","x-forwarded-host",
                     "x-forwarded-proto","x-real-ip","expect"]) (stripHop original)
@@ -315,10 +328,10 @@ proxyRequest cfg endpoint site req body peer isHead closeAfter headOut send = do
             ("x-forwarded-for",peerIP peer),("x-real-ip",peerIP peer),
             ("x-forwarded-host",maybe "" id (header "host" original)),
             ("x-forwarded-proto",if tlsMode cfg == Plain then "http" else "https")] ++ safe
-      transmit upstream (reqMethod req <> " " <> reqTarget req <> " HTTP/1.1\r\n" <>
+      transmit transport (reqMethod req <> " " <> reqTarget req <> " HTTP/1.1\r\n" <>
         B.concat [k <> ": " <> v <> "\r\n" | (k,v) <- headers] <> "\r\n")
-      unless (B.null body) (transmit upstream body)
-      reader <- newReader (receive upstream)
+      unless (B.null body) (transmit transport body)
+      reader <- newReader (receive transport)
       response <- readResponse reader (reqMethod req) `catch` \(_ :: ProtocolError) -> failHTTP 502 "invalid upstream response"
       case resFraming response of
         Fixed n | n > 1073741824 -> failHTTP 502 "upstream body exceeds 1 GiB cap"

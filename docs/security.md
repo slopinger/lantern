@@ -29,7 +29,12 @@ the proxy must still authenticate/authorize users and understand their proxy bou
 - The proxy discards client forwarding identity and hop fields. It reconstructs
   request lengths after decoding and regenerates outgoing chunk framing as needed.
   Upstreams are configured, not taken from request URLs. No pooling or HTTP retry
-  can carry unread/ambiguous bytes into another exchange.
+  can carry unread/ambiguous bytes into another exchange. HTTPS upstreams use our
+  TLS client with SAN identity, certificate-chain/time/purpose verification and
+  system roots or an explicit proxy-only bundle. No HTTP bytes precede successful
+  authentication, no plaintext fallback or certificate-verification bypass exists.
+  TLS handshakes fall within the full upstream deadline. Trust roots are immutable
+  per routing snapshot; failed reloads preserve the prior roots and routes.
 - There is no public management HTTP endpoint, shell command interpolation, CGI,
   executable configuration, remote config fetch, or default access log. Generic
   client errors contain no filesystem paths or upstream internals.
