@@ -1,0 +1,167 @@
+{
+  "date_utc": "2026-10-16T15:58:28Z",
+  "kernel": "7.2.9-arch1-1",
+  "architecture": "x86_64",
+  "logical_cpus": 12,
+  "server_runtime_threads": 2,
+  "generator_threads": 2,
+  "connections": 32,
+  "seconds_per_trial": 3,
+  "trials": 3,
+  "load_average_at_start": [
+    5.484375,
+    4.9482421875,
+    4.73681640625
+  ],
+  "lantern_sha256": "60e9094885f11fa9502e92d0d0a676853be919a7f179da73fc1b8f64ace76669",
+  "caddy_version": "v2.11.7",
+  "notes": [
+    "shared VM; warm page cache; loopback HTTP/1.1 only; no TLS or WAN claim",
+    "both server runtimes set to two schedulers; no CPU affinity isolation",
+    "default serving policies differ; Lantern closes connections after 100 requests",
+    "client verifies matching file bytes before measurements; responses are not compressed",
+    "server CPU cost uses Linux user+system process ticks, including all threads"
+  ],
+  "results": [
+    {
+      "server": "lantern",
+      "request_mode": "full",
+      "status": 200,
+      "body_bytes": 4096,
+      "response_body_bytes": 4096,
+      "median_requests_per_second": 2722.51,
+      "median_body_mib_per_second": 10.6348046875,
+      "trials": [
+        {
+          "requests_per_second": 2722.51,
+          "reported_requests": 8245,
+          "server_cpu_seconds": 3.0,
+          "server_cpu_microseconds_per_request": 363.85688295936933,
+          "rss_bytes_after_trial": 34783232,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:52647/payload-4096.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    15.06ms   15.93ms 140.95ms   89.89%\n    Req/Sec     1.38k   565.04     1.98k    78.33%\n  Latency Distribution\n     50%    9.44ms\n     75%   11.96ms\n     90%   31.51ms\n     99%   88.47ms\n  8245 requests in 3.03s, 34.85MB read\nRequests/sec:   2722.51\nTransfer/sec:     11.51MB\n"
+        },
+        {
+          "requests_per_second": 3035.61,
+          "reported_requests": 9127,
+          "server_cpu_seconds": 3.16,
+          "server_cpu_microseconds_per_request": 346.22548482524377,
+          "rss_bytes_after_trial": 34881536,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:52647/payload-4096.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    10.81ms    4.63ms  40.97ms   90.45%\n    Req/Sec     1.53k   306.97     1.94k    66.67%\n  Latency Distribution\n     50%    9.26ms\n     75%   11.04ms\n     90%   15.09ms\n     99%   31.45ms\n  9127 requests in 3.01s, 38.58MB read\nRequests/sec:   3035.61\nTransfer/sec:     12.83MB\n"
+        },
+        {
+          "requests_per_second": 2482.52,
+          "reported_requests": 7474,
+          "server_cpu_seconds": 2.58,
+          "server_cpu_microseconds_per_request": 345.1966818303452,
+          "rss_bytes_after_trial": 38051840,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:52647/payload-4096.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    17.68ms   21.41ms 162.85ms   91.09%\n    Req/Sec     1.25k   633.58     2.14k    60.00%\n  Latency Distribution\n     50%    9.61ms\n     75%   16.23ms\n     90%   36.17ms\n     99%  120.15ms\n  7474 requests in 3.01s, 31.59MB read\nRequests/sec:   2482.52\nTransfer/sec:     10.49MB\n"
+        }
+      ]
+    },
+    {
+      "server": "lantern",
+      "request_mode": "full",
+      "status": 200,
+      "body_bytes": 1048576,
+      "response_body_bytes": 1048576,
+      "median_requests_per_second": 314.03,
+      "median_body_mib_per_second": 314.03,
+      "trials": [
+        {
+          "requests_per_second": 308.96,
+          "reported_requests": 928,
+          "server_cpu_seconds": 2.5199999999999996,
+          "server_cpu_microseconds_per_request": 2715.51724137931,
+          "rss_bytes_after_trial": 48402432,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:52647/payload-1048576.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency   114.16ms   75.82ms 421.30ms   87.68%\n    Req/Sec   168.38     63.37   323.00     71.70%\n  Latency Distribution\n     50%   92.60ms\n     75%  104.92ms\n     90%  207.09ms\n     99%  413.39ms\n  928 requests in 3.00s, 0.91GB read\nRequests/sec:    308.96\nTransfer/sec:    309.06MB\n"
+        },
+        {
+          "requests_per_second": 426.21,
+          "reported_requests": 1280,
+          "server_cpu_seconds": 3.320000000000002,
+          "server_cpu_microseconds_per_request": 2593.7500000000014,
+          "rss_bytes_after_trial": 47681536,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:52647/payload-1048576.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    72.51ms   10.62ms 106.26ms   74.22%\n    Req/Sec   213.93     76.85   323.00     65.00%\n  Latency Distribution\n     50%   71.22ms\n     75%   78.03ms\n     90%   83.97ms\n     99%  105.44ms\n  1280 requests in 3.00s, 1.28GB read\nRequests/sec:    426.21\nTransfer/sec:    435.11MB\n"
+        },
+        {
+          "requests_per_second": 314.03,
+          "reported_requests": 952,
+          "server_cpu_seconds": 2.59,
+          "server_cpu_microseconds_per_request": 2720.5882352941176,
+          "rss_bytes_after_trial": 50360320,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:52647/payload-1048576.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency   114.45ms   83.64ms 454.55ms   88.14%\n    Req/Sec   177.38     83.54   323.00     67.31%\n  Latency Distribution\n     50%   84.27ms\n     75%  101.70ms\n     90%  242.63ms\n     99%  451.75ms\n  952 requests in 3.03s, 0.94GB read\nRequests/sec:    314.03\nTransfer/sec:    317.19MB\n"
+        }
+      ]
+    },
+    {
+      "server": "caddy",
+      "request_mode": "full",
+      "status": 200,
+      "body_bytes": 4096,
+      "response_body_bytes": 4096,
+      "median_requests_per_second": 5211.56,
+      "median_body_mib_per_second": 20.35765625,
+      "trials": [
+        {
+          "requests_per_second": 5211.56,
+          "reported_requests": 15756,
+          "server_cpu_seconds": 4.59,
+          "server_cpu_microseconds_per_request": 291.3175932977913,
+          "rss_bytes_after_trial": 64634880,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:46879/payload-4096.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency     7.96ms    9.84ms 119.02ms   92.30%\n    Req/Sec     2.63k     0.94k    3.64k    76.67%\n  Latency Distribution\n     50%    5.74ms\n     75%    9.86ms\n     90%   15.70ms\n     99%   53.63ms\n  15756 requests in 3.02s, 65.30MB read\nRequests/sec:   5211.56\nTransfer/sec:     21.60MB\n"
+        },
+        {
+          "requests_per_second": 5984.01,
+          "reported_requests": 17963,
+          "server_cpu_seconds": 5.140000000000001,
+          "server_cpu_microseconds_per_request": 286.14373990981466,
+          "rss_bytes_after_trial": 64159744,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:46879/payload-4096.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency     5.78ms    4.44ms  27.15ms   64.77%\n    Req/Sec     3.01k   307.80     3.70k    65.00%\n  Latency Distribution\n     50%    5.22ms\n     75%    8.40ms\n     90%   12.04ms\n     99%   18.34ms\n  17963 requests in 3.00s, 74.45MB read\nRequests/sec:   5984.01\nTransfer/sec:     24.80MB\n"
+        },
+        {
+          "requests_per_second": 5062.72,
+          "reported_requests": 15213,
+          "server_cpu_seconds": 4.639999999999999,
+          "server_cpu_microseconds_per_request": 305.0023006639058,
+          "rss_bytes_after_trial": 64696320,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:46879/payload-4096.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency     7.69ms    8.18ms  93.44ms   90.03%\n    Req/Sec     2.55k     0.86k    3.70k    78.33%\n  Latency Distribution\n     50%    5.98ms\n     75%   10.33ms\n     90%   15.85ms\n     99%   42.50ms\n  15213 requests in 3.00s, 63.05MB read\nRequests/sec:   5062.72\nTransfer/sec:     20.98MB\n"
+        }
+      ]
+    },
+    {
+      "server": "caddy",
+      "request_mode": "full",
+      "status": 200,
+      "body_bytes": 1048576,
+      "response_body_bytes": 1048576,
+      "median_requests_per_second": 525.73,
+      "median_body_mib_per_second": 525.73,
+      "trials": [
+        {
+          "requests_per_second": 525.73,
+          "reported_requests": 1605,
+          "server_cpu_seconds": 4.34,
+          "server_cpu_microseconds_per_request": 2704.0498442367602,
+          "rss_bytes_after_trial": 69206016,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:46879/payload-1048576.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    79.58ms   89.84ms 707.51ms   87.95%\n    Req/Sec   267.32    117.79   454.00     66.67%\n  Latency Distribution\n     50%   61.13ms\n     75%  109.22ms\n     90%  186.93ms\n     99%  412.20ms\n  1605 requests in 3.05s, 1.57GB read\nRequests/sec:    525.73\nTransfer/sec:    527.74MB\n"
+        },
+        {
+          "requests_per_second": 608.51,
+          "reported_requests": 1829,
+          "server_cpu_seconds": 4.649999999999999,
+          "server_cpu_microseconds_per_request": 2542.372881355931,
+          "rss_bytes_after_trial": 68464640,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:46879/payload-1048576.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    60.94ms   59.27ms 447.11ms   86.40%\n    Req/Sec   305.90     61.28   430.00     63.33%\n  Latency Distribution\n     50%   56.49ms\n     75%   89.71ms\n     90%  135.06ms\n     99%  250.09ms\n  1829 requests in 3.01s, 1.79GB read\nRequests/sec:    608.51\nTransfer/sec:    610.39MB\n"
+        },
+        {
+          "requests_per_second": 514.59,
+          "reported_requests": 1568,
+          "server_cpu_seconds": 4.260000000000002,
+          "server_cpu_microseconds_per_request": 2716.836734693879,
+          "rss_bytes_after_trial": 67268608,
+          "wrk_output": "Running 3s test @ http://127.0.0.1:46879/payload-1048576.bin\n  2 threads and 32 connections\n  Thread Stats   Avg      Stdev     Max   +/- Stdev\n    Latency    80.66ms   92.63ms 752.70ms   88.05%\n    Req/Sec   267.71    100.45   430.00     74.14%\n  Latency Distribution\n     50%   61.47ms\n     75%  112.50ms\n     90%  187.59ms\n     99%  433.98ms\n  1568 requests in 3.05s, 1.54GB read\nRequests/sec:    514.59\nTransfer/sec:    517.04MB\n"
+        }
+      ]
+    }
+  ]
+}

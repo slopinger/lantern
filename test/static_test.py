@@ -61,6 +61,39 @@ site encoded.local {{ root public header Content-Encoding gzip }}
         self.assertEqual(self.server.request()[::2], (200, b'hello conditional'))
         self.assertEqual(self.server.request(method='HEAD')[::2], (200, b''))
 
+    def test_slow_static_reader_keeps_absolute_write_deadline(self):
+        payload = self.root/'slow.bin'
+        with payload.open('wb') as file:
+            file.truncate(64*1024*1024)
+        directory = self.directory/'deadline'
+        directory.mkdir()
+        port = free_port()
+        server = Running(directory, f'listen 127.0.0.1:{port}\nwrite_timeout 1\nsite localhost {{ root {self.root} }}\n', port)
+        try:
+            with socket.socket() as peer:
+                peer.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 4096)
+                peer.settimeout(3)
+                peer.connect(('127.0.0.1', port))
+                peer.sendall(b'GET /slow.bin HTTP/1.1\r\nHost: localhost\r\n\r\n')
+                self.assertTrue(peer.recv(512).startswith(b'HTTP/1.1 200 '))
+                until = time.monotonic()+2.5
+                while time.monotonic() < until:
+                    if not peer.recv(4096):
+                        break
+                    time.sleep(.01)  # make progress without draining the socket
+                # The absolute deadline must close the file despite continuing
+                # reader progress; per-chunk timeout resets would retain it.
+                paths = []
+                for descriptor in pathlib.Path(f'/proc/{server.proc.pid}/fd').iterdir():
+                    try:
+                        paths.append(os.readlink(descriptor))
+                    except FileNotFoundError:
+                        pass
+                self.assertNotIn(str(payload), paths, 'slow reader extended response deadline')
+            self.assertEqual(server.request()[0], 200)
+        finally:
+            server.close()
+
     def test_conditional_precedence_and_dates(self):
         status, headers, body = self.server.request()
         self.assertEqual((status, body), (200, b'hello conditional'))

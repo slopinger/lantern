@@ -88,3 +88,12 @@
 - The ACME fixture permits 30 seconds for initial key generation/issuance before
   the HTTPS listener opens. Ordinary fixture startup remains four seconds; tests
   include server output on readiness timeout. Production deadlines are unchanged.
+- Response output uses one absolute deadline around dispatch; raw header/chunk
+  writes do not register nested per-chunk timers. Error and HTTP-01 responses
+  each have a whole-response deadline too; 100-continue retains its bounded
+  interim write and a partial failure forbids further responses. The slow-reader
+  static test verifies the file closes despite ongoing client progress.
+- The benchmark records process user+system ticks per reported request, including
+  server threads, and --conditional-only measures 304s without bulk-load trials.
+  Shared-VM throughput varied substantially, including Caddy controls; preserve
+  raw trials and report the actual workload/CPU metric, not a general speed claim.

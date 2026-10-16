@@ -138,3 +138,10 @@ HTTPS certificate key policy requires exact RSA modulus bounds throughout the
 selected path (2048–8192 bits); rounded byte size cannot establish the minimum.
 Only the TLS library's advertised modern certificate algorithms are accepted.
 The proxy regressions cover weak issuer and weak leaf rejection before HTTP.
+
+Response deadlines cover the complete dispatch/stream. Header/chunk writes share
+that deadline rather than registering independent nested timers. Error and
+HTTP-01 responses also have one complete write deadline. A failed partial interim
+100-continue write prevents a second response; a successful interim still permits
+normal final/error responses. Slow-reader tests verify continuing progress cannot
+extend a static transfer beyond its absolute write budget.

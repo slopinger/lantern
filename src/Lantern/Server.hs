@@ -206,12 +206,15 @@ serveConnection limits state peer transport challenges bodyBudget = do
         headRequest <- newIORef False
         let rawSend = transmit transport
             send = deadline (writeSeconds limits) 408 . rawSend
-            headOut status hs = writeIORef started True >> writeHead send status hs
+            -- Every use is inside a whole-response deadline, including errors
+            -- and HTTP-01. Avoid a timer registration for each streamed chunk.
+            headOut status hs = writeIORef started True >> writeHead rawSend status hs
             errorOut code = do
               sent <- readIORef started
               isHead <- readIORef headRequest
               let extra=if code == 405 then [("allow","GET, HEAD")] else []
-              unless sent $ simple headOut send isHead True code extra "request failed\n"
+              unless sent $ deadline (writeSeconds limits) 408 $
+                simple headOut rawSend isHead True code extra "request failed\n"
             handleError (e :: SomeException) = case fromException e of
               Just (ProtocolError code _) -> errorOut code >> pure False
               Nothing -> case fromException e :: Maybe AsyncException of
@@ -232,7 +235,11 @@ serveConnection limits state peer transport challenges bodyBudget = do
           bracket (reserveBody bodyBudget reservation) (releaseBody bodyBudget) $ \_ -> do
             case values "expect" hs of
               [] -> pure ()
-              [v] | lower v == "100-continue" && reqVersion req == "HTTP/1.1" -> send "HTTP/1.1 100 Continue\r\n\r\n"
+              [v] | lower v == "100-continue" && reqVersion req == "HTTP/1.1" -> do
+                -- A failed partial interim write also forbids a second response.
+                writeIORef started True
+                send "HTTP/1.1 100 Continue\r\n\r\n"
+                writeIORef started False
               _ -> failHTTP 417 "unsupported expectation"
             body <- deadline (bodySeconds limits) 408 (collectBody reader (reqFraming req) (bodyLimit limits))
             Snapshot current _ roots cache <- readIORef state
@@ -240,17 +247,17 @@ serveConnection limits state peer transport challenges bodyBudget = do
             site <- maybe (failHTTP 421 "unknown host") pure (find ((==host) . siteHost) (sites current))
             case challenges of
               Nothing -> let code=case siteAction site of Proxy{} -> 504; _ -> 408
-                         in deadline (writeSeconds limits) code (dispatch current roots cache site req body peer transport isHead closeAfter headOut send)
+                         in deadline (writeSeconds limits) code (dispatch current roots cache site req body peer transport isHead closeAfter headOut rawSend)
               Just table -> do
                 unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "HTTP-01 requires GET or HEAD"
                 answer <- ACME.challengeResponse table host (reqTarget req)
-                case answer of
-                  Just token -> simple headOut send isHead closeAfter 200 [] token
+                deadline (writeSeconds limits) 408 $ case answer of
+                  Just token -> simple headOut rawSend isHead closeAfter 200 [] token
                   Nothing | "/.well-known/acme-challenge/" `B.isPrefixOf` reqTarget req -> failHTTP 404 "unknown ACME token"
                   Nothing -> do
                     let port=endpointPort (listen current)
                         authority=siteHost site <> if port == 443 then "" else ":" <> C.pack (show port)
-                    simple headOut send isHead closeAfter 308 [("location","https://"<>authority<>reqTarget req)] "redirecting\n"
+                    simple headOut rawSend isHead closeAfter 308 [("location","https://"<>authority<>reqTarget req)] "redirecting\n"
             pure (not closeAfter)
           ) `catch` handleError
         when continue (loop (count+1))

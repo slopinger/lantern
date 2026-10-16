@@ -29,6 +29,12 @@ def rss(pid):
     except (OSError,StopIteration):return None
 
 
+def cpu_seconds(pid):
+    # Linux process totals include all its threads; omit waited-for child times.
+    fields=pathlib.Path(f'/proc/{pid}/stat').read_text().rsplit(')',1)[1].split()
+    return (int(fields[11])+int(fields[12]))/os.sysconf('SC_CLK_TCK')
+
+
 def main():
     p=argparse.ArgumentParser()
     p.add_argument('--lantern',default='./result/bin/lantern')
@@ -38,6 +44,7 @@ def main():
     p.add_argument('--trials',type=int,default=3)
     p.add_argument('--out',default='benchmark.json')
     p.add_argument('--conditional',action='store_true',help='also measure verified If-None-Match / 304 responses')
+    p.add_argument('--conditional-only',action='store_true',help='measure only verified 304 responses, without full-response load trials')
     args=p.parse_args()
     assert args.caddy and args.wrk,'caddy and wrk are required'
     binary=str(pathlib.Path(args.lantern).resolve())
@@ -50,7 +57,8 @@ def main():
              'notes':['shared VM; warm page cache; loopback HTTP/1.1 only; no TLS or WAN claim',
                       'both server runtimes set to two schedulers; no CPU affinity isolation',
                       'default serving policies differ; Lantern closes connections after 100 requests',
-                      'client verifies matching file bytes before measurements; responses are not compressed'],
+                      'client verifies matching file bytes before measurements; responses are not compressed',
+                      'server CPU cost uses Linux user+system process ticks, including all threads'],
              'results':[]}
     with tempfile.TemporaryDirectory(prefix='lantern-benchmark-') as tmp:
         d=pathlib.Path(tmp)
@@ -78,7 +86,7 @@ def main():
                         c.request('GET',path,headers={'Host':'localhost'})
                         r=c.getresponse();etag=r.getheader('etag')
                         assert r.status==200 and r.read()==b'x'*size;c.close()
-                        for mode in (['full','not-modified'] if args.conditional else ['full']):
+                        for mode in (['not-modified'] if args.conditional_only else ['full','not-modified'] if args.conditional else ['full']):
                             request_headers={'Host':'localhost'}
                             if mode=='not-modified':
                                 assert etag,server+' did not supply an ETag'
@@ -94,10 +102,16 @@ def main():
                             subprocess.run(base+['-d1s'],check=True,capture_output=True)
                             trials=[]
                             for trial in range(args.trials):
+                                cpu_before=cpu_seconds(process.pid)
                                 out=subprocess.check_output(base+[f'-d{args.duration}s'],text=True)
+                                cpu_used=max(0,cpu_seconds(process.pid)-cpu_before)
                                 if 'Socket errors:' in out or 'Non-2xx or 3xx responses:' in out:raise AssertionError(out)
                                 rate=float(re.search(r'Requests/sec:\s+([\d.]+)',out)[1])
-                                trials.append({'requests_per_second':rate,'rss_bytes_after_trial':rss(process.pid),'wrk_output':out})
+                                requests=int(re.search(r'(\d+) requests in',out)[1])
+                                assert requests>0,'wrk reported no completed requests'
+                                trials.append({'requests_per_second':rate,'reported_requests':requests,
+                                               'server_cpu_seconds':cpu_used,
+                                               'server_cpu_microseconds_per_request':cpu_used*1e6/requests,'rss_bytes_after_trial':rss(process.pid),'wrk_output':out})
                             median=statistics.median(t['requests_per_second'] for t in trials)
                             delivered=len(expected_body)
                             results['results'].append({'server':server,'request_mode':mode,'status':expected_status,

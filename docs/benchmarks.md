@@ -132,3 +132,70 @@ varied between the sequential runs. Preserve these observations when evaluating
 further optimizations rather than attributing combined changes to descriptor I/O.
 Raw trials/control measurements: [baseline](benchmark-2026-10-16-fd-before.json)
 and [descriptor I/O](benchmark-2026-10-16-fd-after.json).
+
+## Whole-response deadline follow-up
+
+Normal dispatch already had an absolute deadline, so nested timers around each
+header/chunk write were redundant. Those writes now share the dispatch deadline.
+Error responses and HTTP-01 responses have their own complete-response deadlines;
+interim 100-continue output remains bounded. The slow-reader regression checks
+that continuing body progress cannot retain an open file past the absolute budget.
+
+[The combined syscall profile](syscalls-2026-10-16-response-deadline.json) reported
+48,053,904 allocated bytes for the same 1,000 requests, compared with 68,551,056
+at baseline. Its write syscall count was essentially unchanged, so these data do
+not attribute runtime wakeups to the removed timers.
+
+The [first combined throughput run](benchmark-2026-10-16-response-deadline.json)
+had markedly lower request rates, but Caddy's control rates also dropped by about
+one third relative to the earlier run. This host is shared; those sequential
+throughput measurements cannot isolate the code's contribution.
+
+The benchmark now records Linux process user+system CPU ticks before/after each
+trial and divides by wrk's reported request count. These include all server threads,
+exclude client/generator CPU, and have the kernel's clock-tick precision. See
+[proc_pid_stat](https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html). CPU cost
+is an additional observation, not a latency, availability or throughput guarantee.
+
+Both original full-response workloads were repeated with three three-second
+trials and one-second warmups, two schedulers and 32 connections. The baseline
+executable is `7ae95ed`; the candidate combines descriptor I/O with the deadline
+changes. All trial values are preserved; no trials were filtered.
+
+| Server/workload | Before req/s | Combined req/s | Before CPU µs/req | Combined CPU µs/req |
+| --- | ---: | ---: | ---: | ---: |
+| lantern, 4 KiB | 2,722.5 | 3,358.0 | 346.2 | 279.9 |
+| lantern, 1024 KiB | 314.0 | 564.9 | 2,715.5 | 1,964.6 |
+| caddy, 4 KiB | 5,211.6 | 5,090.4 | 291.3 | 294.6 |
+| caddy, 1024 KiB | 525.7 | 551.2 | 2,704.0 | 2,535.5 |
+
+In this repeat, Lantern used about 19% less server CPU per 4 KiB response and
+28% less per 1 MiB response. Its observed request rates increased; Caddy's control
+rates were comparatively close between these two runs. That supports lower work
+per request in these workloads, but does not prove every throughput difference is
+caused by the change or establish general superiority to Caddy. The tests still
+exclude TLS, cold files, ranges, WAN transport, long-duration load and adversarial
+clients. Raw data: [before](benchmark-2026-10-16-cpu-before.json),
+[combined](benchmark-2026-10-16-cpu-after.json).
+
+A separate conditional-only repeat checks 304 responses without preceding
+bulk-transfer load trials. It uses the same three three-second trials, warmups,
+thread/connection limits, byte preflight and each server's own verified ETag.
+The initial 200 response is still verified before measuring 304 responses.
+
+| Server/workload | Before req/s | Combined req/s | Before CPU µs/req | Combined CPU µs/req |
+| --- | ---: | ---: | ---: | ---: |
+| lantern, 4 KiB 304 | 2,871.4 | 3,676.4 | 292.9 | 241.6 |
+| lantern, 1024 KiB 304 | 2,475.3 | 2,970.3 | 291.5 | 259.2 |
+| caddy, 4 KiB 304 | 7,899.1 | 9,347.4 | 173.8 | 162.2 |
+| caddy, 1024 KiB 304 | 8,852.1 | 8,674.0 | 168.1 | 170.5 |
+
+Lantern's observed CPU cost was about 18% lower for the small-file 304 and 11%
+lower for the large-file 304. Caddy remained considerably faster on these
+metadata-only workloads. Controls and request rates still vary; this repeat does
+not isolate every environmental effect. A worker-thread sanity check also compared
+the new process-tick reader against Python process_time: 0.200 versus 0.202 CPU
+seconds for two worker threads, within the kernel tick resolution.
+[Conditional baseline](benchmark-2026-10-16-conditional-cpu-before.json) and
+[combined](benchmark-2026-10-16-conditional-cpu-after.json) preserve all trials.
+Use `test/benchmark.py --conditional-only` to reproduce that workload selection.
