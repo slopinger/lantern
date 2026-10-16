@@ -157,7 +157,9 @@ Files stream from the same confined descriptor that supplied size and timestamps
 Reverse proxy upstreams are fixed `http://host:port` or `https://host:port`
 endpoints (explicit ports, no paths or credentials). HTTPS uses Lantern's own TLS
 client, verifies the configured host against its certificate SANs and trust roots,
-and sends HTTP only after authentication. `proxy_ca_bundle` replaces system roots
+and sends HTTP only after authentication. The TLS reference must be an ASCII DNS
+A-label or IP literal; it is validated before case normalization/IP parsing.
+The library does not perform IDNA conversion. `proxy_ca_bundle` replaces system roots
 for every HTTPS upstream, independently of ACME trust. It is resolved relative to
 the Lanternfile and loaded once per routing snapshot; SIGHUP reloads its contents
 atomically. Changing the configured bundle path requires a restart. TLS failures

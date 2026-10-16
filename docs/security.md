@@ -224,3 +224,11 @@ this prevents silent aliasing (for example Ł -> A). Redirects may contain liter
 ASCII percent escapes. Response bodies and header values still encode UTF-8.
 Tests enumerate 128 Latin-extension projection cases for each field, verify
 positive UTF-8/escaped values and exercise actual CLI check/run diagnostics.
+
+The pinned TLS client validates original reference input before case normalization
+or IP parsing: bounded printable ASCII DNS A-labels/IP literals only, no spaces
+or controls. This prevents Unicode fold aliases and whitespace-tolerant IP reads.
+The server config already requires ASCII endpoint names; the independent TLS
+String API now enforces the same input profile. IDNA conversion belongs to the
+caller. TLS tests cover two fold aliases, ASCII/A-label/IP success, and nine
+invalid inputs emitting no ClientHello. No cryptographic primitive changed.
