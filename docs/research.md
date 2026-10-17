@@ -309,3 +309,31 @@ committed headers cannot be rewritten. Idle readers remain bounded by the
 existing header/drain deadlines, and the ten-second drain budget is unchanged.
 The fixture verifies refusal of new idle-keepalive work while an active upstream
 finishes successfully, followed by EOF without a second buffered response.
+
+## Idle sockets during graceful stop (2026-10-17)
+
+The registry now records whether each socket has an admitted request. Stop
+atomically marks the registry stopped and collects only idle/header/handshake
+sockets for closure. Complete-header admission and return-to-idle update that
+same registry under its lock, so the snapshot cannot classify an admitted request
+as idle. Active work keeps the existing grace; newly admitted work remains
+forbidden. Closing the established Socket object also interrupts pending reads,
+without an unsafe raw-descriptor close or a new transport primitive.
+
+A keep-alive connection with a 30-second header timeout previously kept the
+process alive until the ten-second drain expired. The new fixture requires exit
+within two seconds. Existing held-upstream/pipeline checks remain; late idle
+requests may receive EOF/reset instead of a 503 response. This does not change
+the configured grace or claim that already-active I/O completes immediately.
+
+Idle shutdown records the established transport close action under the registry
+lock. It sends TLS close_notify before closing idle sockets; handshakes without
+a transport close directly. Closers run concurrently, with a one-second TLS
+finish deadline, so slow idle peers do not serialize the grace period. A real
+Python/OpenSSL peer with ragged EOF suppression disabled verifies authenticated
+TLS closure, alongside the plain idle and active/pipelined drain tests.
+
+The idle TLS shutdown ordering follows [RFC 8446 section 6.1](https://www.rfc-editor.org/rfc/rfc8446.html#section-6.1):
+transport EOF without a prior authenticated closure alert cannot establish that
+all sent data arrived. The caller still owns the transport and deadlines; the
+library's close operation sends the alert without waiting for peer shutdown.

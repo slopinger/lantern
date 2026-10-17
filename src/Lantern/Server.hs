@@ -41,7 +41,8 @@ data StaticCache = StaticCache
   (IORef (Maybe (Integer,B.ByteString)))
 newStaticCache :: IO StaticCache
 newStaticCache=StaticCache <$> newIORef M.empty <*> newIORef Nothing
-type Registry = MVar (Bool, M.Map ThreadId Socket)
+-- The per-client flag is True only for an admitted request, not idle/header I/O.
+type Registry = MVar (Bool, M.Map ThreadId (Socket,Bool,Maybe (IO ())))
 
 checkConfig :: FilePath -> IO ()
 checkConfig file = do
@@ -116,8 +117,16 @@ runServer file = do
       reload <- newEmptyMVar
       bracket (openListener (listen cfg)) close $ \listener -> do
         let stop = do
-              modifyMVar_ registry (\(_,m) -> pure (True,m))
+              idle <- modifyMVar registry $ \(stopped,m) ->
+                pure ((True,m), if stopped then [] else [(s,end) | (s,busy,end) <- M.elems m, not busy])
               mapM_ close (listener:additionalListeners)
+              -- Close only sockets without an admitted request. Admission and
+              -- phase changes use this same lock, so active work cannot race it.
+              forM_ idle $ \(s,end) -> void $ forkIO $ do
+                -- Each TLS finish has its own bounded deadline; peers close
+                -- concurrently so slow peers cannot multiply shutdown time.
+                _ <- try (maybe (pure ()) id end) :: IO (Either SomeException ())
+                close s
             queueReload=void (tryPutMVar reload ())
         _ <- installHandler sigTERM (Catch stop) Nothing
         _ <- installHandler sigINT (Catch stop) Nothing
@@ -206,9 +215,12 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
                     (_,Just _) -> tlsTransport (do
                       Snapshot _ c _ _ <- readIORef state
                       maybe (fail "missing TLS credentials") pure c) socket'
-                  serveConnection cfg state registry peer transport challenges bodyBudget `finally` finish transport
+                  (do
+                    ready <- modifyMVar registry $ \(stopped,clients) ->
+                      pure ((stopped,M.adjust (\(s,busy,_) -> (s,busy,Just (finish transport))) self clients),not stopped)
+                    when ready (serveConnection cfg state registry peer transport challenges bodyBudget)) `finally` finish transport
             (unmask task `catch` quietConnection) `finally` cleanup
-          pure ((stopped,M.insert tid socket' clients),True)
+          pure ((stopped,M.insert tid (socket',False,Nothing) clients),True)
     unless admitted (close socket')) `onException` close socket'
   where
     quietConnection e = case fromException e :: Maybe AsyncException of
@@ -218,6 +230,7 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
 serveConnection :: Config -> IORef Snapshot -> Registry -> SockAddr -> Transport -> Maybe ACME.Challenges -> IORef Integer -> IO ()
 serveConnection limits state registry peer transport challenges bodyBudget = do
   reader <- newReader (receive transport)
+  self <- myThreadId
   let loop count = when (count < 100) $ do
         started <- newIORef False
         headRequest <- newIORef False
@@ -246,7 +259,11 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
           writeIORef headRequest (reqMethod req == "HEAD")
           -- Serialize request admission with stop, including existing sockets.
           -- A request admitted before stop may finish; later ones never dispatch.
-          allowed <- not . fst <$> readMVar registry
+          allowed <- modifyMVar registry $ \(stopped,clients) ->
+            if stopped then pure ((stopped,clients),False) else
+              case M.lookup self clients of
+                Nothing -> pure ((stopped,clients),False)
+                Just (socket',_,end) -> pure ((stopped,M.insert self (socket',True,end) clients),True)
           unless allowed $ failHTTP 503 "server draining"
           let hs = reqHeaders req
               closeAfter = connectionClose req || count == 99
@@ -286,8 +303,9 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
             pure (not closeAfter)
           ) `catch` handleError
         when continue $ do
-          stopped <- fst <$> readMVar registry
-          unless stopped (loop (count+1))
+          again <- modifyMVar registry $ \(stopped,clients) ->
+            pure ((stopped,M.adjust (\(socket',_,end) -> (socket',False,end)) self clients),not stopped)
+          when again (loop (count+1))
   loop (0 :: Int)
 
 -- A global admission budget prevents the connection limit times body limit from

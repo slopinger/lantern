@@ -32,7 +32,8 @@ invalid reloads retain the complete working configuration. Send **SIGTERM** for
 a ten-second drain followed by connection cancellation. Requests admitted before
 stop may finish. Existing keep-alive sockets cannot admit new work after stop;
 responses committed during drain advertise `Connection: close`, and buffered
-following requests are not dispatched. Idle readers remain deadline-bounded.
+following requests are not dispatched. Idle/header/handshake sockets close promptly on stop. Requests admitted before
+stop retain the grace period; late clients may observe EOF/reset instead of 503.
 
 ## Automatic HTTPS
 
@@ -272,3 +273,10 @@ ACME-issued leaf DNS SANs must exactly match the requested site names (case and
 order ignored). Incorrect issuance retains the working certificate and enters
 retry backoff. A mismatched cached identity requires new issuance before HTTPS
 opens. Wildcard/CN substitution and additional identifiers are not accepted.
+
+Idle shutdown records the established transport close action under the registry
+lock. It sends TLS close_notify before closing idle sockets; handshakes without
+a transport close directly. Closers run concurrently, with a one-second TLS
+finish deadline, so slow idle peers do not serialize the grace period. A real
+Python/OpenSSL peer with ragged EOF suppression disabled verifies authenticated
+TLS closure, alongside the plain idle and active/pipelined drain tests.

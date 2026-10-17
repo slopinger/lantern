@@ -241,3 +241,19 @@ Headers already committed before stop cannot be changed. Idle readers remain
 bounded by header/drain deadlines. The shutdown fixture holds a real upstream
 response, proves listener closure, rejects new idle-keepalive work, completes the
 active response and checks the queued pipeline request is not dispatched.
+
+The connection registry tracks admitted-request versus idle/header/handshake
+phase under the stop lock. Shutdown closes idle/header/handshake sockets promptly,
+while admitted requests drain. Request admission and return-to-idle are atomic
+with that classification, so stop cannot close a newly admitted active request.
+Late requests may see EOF/reset rather than 503; no new work or 100-continue is
+admitted. An idle-only fixture with a 30-second header timeout verifies process
+exit within two seconds instead of consuming the ten-second grace. The held
+upstream/pipeline fixture still verifies active completion and no queued work.
+
+Idle shutdown records the established transport close action under the registry
+lock. It sends TLS close_notify before closing idle sockets; handshakes without
+a transport close directly. Closers run concurrently, with a one-second TLS
+finish deadline, so slow idle peers do not serialize the grace period. A real
+Python/OpenSSL peer with ragged EOF suppression disabled verifies authenticated
+TLS closure, alongside the plain idle and active/pipelined drain tests.

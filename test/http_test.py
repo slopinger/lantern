@@ -283,6 +283,40 @@ site redirect.local {{ redirect https://example.com/fixed }}
         overflow = b'GET /' + b'a'*8179 + b' HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n'
         self.assertEqual(self.server.raw(overflow)[0], 431)
 
+    def test_shutdown_closes_idle_keepalive_without_waiting_for_grace(self):
+        self.server.close()
+        config = self.config.replace('header_timeout 1', 'header_timeout 30')
+        self.server = Running(self.d, config, self.port)
+        with socket.create_connection(('127.0.0.1', self.port), timeout=4) as peer:
+            peer.sendall(b'GET / HTTP/1.1\r\nHost: text.local\r\n\r\n')
+            response = http.client.HTTPResponse(peer); response.begin()
+            self.assertEqual((response.status, response.read()), (200, b'hello text'))
+            response.close()
+            self.server.proc.send_signal(signal.SIGTERM)
+            self.assertEqual(self.server.proc.wait(timeout=2), 0)
+            self.assertEqual(peer.recv(1), b'')
+
+    def test_shutdown_idle_tls_sends_close_notify(self):
+        self.server.close()
+        cert, key = self.d/'cert.pem', self.d/'key.pem'
+        subprocess.run(['openssl', 'req', '-x509', '-newkey', 'rsa:2048', '-nodes',
+                        '-days', '1', '-subj', '/CN=localhost', '-addext',
+                        'subjectAltName=DNS:localhost', '-keyout', str(key), '-out', str(cert)],
+                       check=True, capture_output=True)
+        cfg = (f'listen 127.0.0.1:{self.port}\nheader_timeout 30\n'
+               'tls cert.pem key.pem\nsite localhost { respond "TLS works" }\n')
+        self.server = Running(self.d, cfg, self.port)
+        ctx = ssl.create_default_context(cafile=str(cert))
+        with socket.create_connection(('127.0.0.1', self.port), timeout=4) as raw:
+            with ctx.wrap_socket(raw, server_hostname='localhost', suppress_ragged_eofs=False) as peer:
+                peer.sendall(b'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n')
+                response = http.client.HTTPResponse(peer); response.begin()
+                self.assertEqual((response.status, response.read()), (200, b'TLS works'))
+                response.close()
+                self.server.proc.send_signal(signal.SIGTERM)
+                self.assertEqual(peer.recv(1), b'')  # SSLEOFError on missing close_notify.
+                self.assertEqual(self.server.proc.wait(timeout=2), 0)
+
     def test_shutdown_finishes_active_request_without_admitting_keepalive_work(self):
         self.server.close()
         config = self.config.replace('header_timeout 1', 'header_timeout 30').replace('write_timeout 1', 'write_timeout 30')
@@ -316,16 +350,17 @@ site redirect.local {{ redirect https://example.com/fixed }}
                     time.sleep(.01)
                 # The closed listener proves stop committed; an existing socket
                 # must not admit new application work after that boundary.
-                idle.sendall(b'GET / HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n')
-                rejected = http.client.HTTPResponse(idle); rejected.begin()
-                self.assertEqual(rejected.status, 503, 'new keepalive request dispatched while draining')
-                self.assertEqual(rejected.getheader('Connection'), 'close')
-                rejected.read(); rejected.close()
-                expecting.sendall(b'POST / HTTP/1.1\r\nHost: proxy.local\r\nContent-Length: 5\r\n'
-                                  b'Expect: 100-continue\r\n\r\n')
-                with expecting.makefile('rb') as reply:
-                    first_line = reply.readline(1024)
-                self.assertTrue(first_line.startswith(b'HTTP/1.1 503 '), first_line)
+                for peer, request in [
+                    (idle, b'GET / HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n'),
+                    (expecting, b'POST / HTTP/1.1\r\nHost: proxy.local\r\nContent-Length: 5\r\n'
+                                b'Expect: 100-continue\r\n\r\n')]:
+                    try:
+                        peer.sendall(request)
+                        with peer.makefile('rb') as reply:
+                            first_line = reply.readline(1024)
+                        self.assertTrue(not first_line or first_line.startswith(b'HTTP/1.1 503 '), first_line)
+                    except (BrokenPipeError, ConnectionResetError):
+                        pass  # Idle sockets are closed immediately on stop.
                 self.backend.drain_release.set()
                 finished = http.client.HTTPResponse(active); finished.begin()
                 self.assertEqual((finished.status, finished.read()), (200, b'drained'))
