@@ -165,6 +165,26 @@ patterns are rejected; at most 128 handlers per site. Roots remain relative to
 the Lanternfile, confined and checked at startup. HTTPS upstreams retain normal
 certificate verification. Handler changes reload with SIGHUP.
 
+Use `handle_path` to remove a mount prefix before serving:
+
+```text
+site example.com {
+    handle_path /api/* {
+        reverse_proxy http://127.0.0.1:3000
+    }
+    handle_path /files/* {
+        root /srv/downloads
+    }
+}
+```
+
+Here `/api/users?q=1` reaches the upstream as `/users?q=1`, and `/files/manual.pdf`
+serves `/srv/downloads/manual.pdf`. `handle_path` requires a pattern ending in
+`/*`; the stripped target still starts with `/`. Matching and precedence work as
+for `handle`. Directory redirects keep the public mount prefix and query.
+Applications behind a mount must generate links for their public base path;
+upstream response bodies, cookies and Location headers are not rewritten.
+
 Quoted values support spaces, escaped quotes and backslashes. `#` starts a comment
 outside quotes. Unknown directives, duplicate global directives, duplicate hosts,
 multiple actions, and unsafe response headers fail validation. DNS names use

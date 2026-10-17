@@ -266,8 +266,9 @@ close. Partial request EOF still fails. Tests cover plain TCP half-close and an
 OpenSSL TLS unwrap after a complete keepalive response, plus idle stop/draining.
 
 Path handlers match the raw escaped path, excluding query text. They do not
-decode, normalize or strip prefixes; matching is not an authorization boundary.
-Static actions retain confined path decoding, and proxy actions retain the full
-original target. Most specific matching action wins; absent default/match is 404.
+decode or normalize; matching is not an authorization boundary. handle_path strips
+its literal matched prefix before dispatch; handle retains the full target.
+Static actions retain confined path decoding, and proxy actions receive the selected
+retained or prefix-stripped target. Most specific matching action wins; absent default/match is 404.
 Shared header restrictions apply to every leaf, and proxy trust/root resolution
 traverse handler actions during configuration preparation.

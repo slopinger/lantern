@@ -252,7 +252,7 @@ staging directories. Explicit public bind/domain flags retain their usual effect
 
 - Path routing: handle /exact or /prefix/* { ACTION }; optional one default action.
   Longest raw escaped path match, exact before equal-length prefix; query excluded
-  from matching and preserved upstream. No stripping, normalization or nesting.
+  from matching and preserved upstream. No normalization or nesting.
   Max 128 unique patterns/site; shared headers validated against every leaf.
   Recursive root resolution and proxy trust detection cover handler actions.
   Missing route/default returns 404. ACME HTTP-01 dispatch bypasses path routing.
@@ -264,3 +264,12 @@ staging directories. Explicit public bind/domain flags retain their usual effect
   repeated endpoint/numeric startup matrices. One startup side-effect fixture
   retains representative invalid endpoint and DNS-identifier cases. Unicode
   projection checks use actual regression characters instead of 256 combinations.
+
+- handle_path /prefix/* strips /prefix before dispatch. Matching uses the original
+  raw path; queries survive unchanged. Roots and HTTPS trust traverse StripPrefix
+  wrappers. Static directory redirects use the public original target, preserving
+  mount/query. Upstream Location/cookies/body links are not rewritten. The existing
+  mixed-route check covers mounted proxy, root and public directory redirect.
+For source-only routing changes, verify nix build and the integration flake
+check; run the booted service check when packaging/module/host integration
+changes. Keep new verification focused on shipped user-visible behavior.

@@ -303,9 +303,9 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
                 site <- maybe (failHTTP 421 "unknown host") pure matched
                 case challenges of
                   Nothing -> do
-                    selected <- maybe (failHTTP 404 "no matching route") pure (routeSite (reqTarget req) site)
+                    (selected,target) <- maybe (failHTTP 404 "no matching route") pure (routeSite (reqTarget req) site)
                     let code=case siteAction selected of Proxy{} -> 504; _ -> 408
-                    deadline (writeSeconds limits) code (dispatch current roots cache selected req body peer transport isHead closeAfter headOut rawSend)
+                    deadline (writeSeconds limits) code (dispatch current roots cache selected (req {reqTarget=target}) body peer (reqTarget req) isHead closeAfter headOut rawSend)
                   Just table -> do
                     unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "HTTP-01 requires GET or HEAD"
                     answer <- ACME.challengeResponse table host (reqTarget req)
@@ -367,8 +367,8 @@ simple headOut send isHead closeAfter status hs body = do
   headOut status headers
   unless isHead (send body)
 
-dispatch :: Config -> Maybe TLS.TrustStore -> StaticCache -> Site -> Request -> B.ByteString -> SockAddr -> Transport -> Bool -> Bool -> HeadOut -> Send -> IO ()
-dispatch cfg roots cache site req body peer _transport isHead closeAfter headOut send =
+dispatch :: Config -> Maybe TLS.TrustStore -> StaticCache -> Site -> Request -> B.ByteString -> SockAddr -> B.ByteString -> Bool -> Bool -> HeadOut -> Send -> IO ()
+dispatch cfg roots cache site req body peer publicTarget isHead closeAfter headOut send =
   case siteAction site of
     Respond text -> simple headOut send isHead closeAfter 200 extra text
     Redirect url -> simple headOut send isHead closeAfter 308 (("location",url):extra) "redirecting\n"
@@ -380,7 +380,7 @@ dispatch cfg roots cache site req body peer _transport isHead closeAfter headOut
               serveStatic cache req relative extra h status isHead closeAfter headOut send
             case result of
               Just () -> pure ()
-              Nothing -> case directoryRedirect (reqTarget req) of
+              Nothing -> case directoryRedirect publicTarget of
                 Nothing -> failHTTP 404 "directory index is not a regular file"
                 Just location -> simple headOut send isHead closeAfter 308
                   (("location",location):filter (\(key,_) -> key `notElem`
@@ -389,6 +389,7 @@ dispatch cfg roots cache site req body peer _transport isHead closeAfter headOut
         if isDoesNotExistError e || isPermissionError e then failHTTP 404 "file not found" else throwIO e
     Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send
     Routes{} -> failHTTP 500 "unresolved route"
+    StripPrefix{} -> failHTTP 500 "unresolved mount"
   where
     extra = siteHeaders site
 

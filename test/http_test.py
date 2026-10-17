@@ -184,6 +184,8 @@ site redirect.local {{ redirect https://example.com/fixed }}
   header X-Site mixed
   handle /api/* {{ reverse_proxy http://localhost:{self.backend.server_port} }}
   handle /api/health {{ respond healthy }}
+  handle_path /stripped/* {{ reverse_proxy http://localhost:{self.backend.server_port} }}
+  handle_path /mounted/* {{ root ./public }}
   handle /old {{ redirect https://example.com/new }}
 }}
 site routes.local {{ handle /health {{ respond up }} handle /nested/* {{ root ./public }} }}
@@ -193,6 +195,9 @@ site routes.local {{ handle /health {{ respond up }} handle /nested/* {{ root ./
         status, headers, body = self.server.request('/api/users?q=1', host='mixed.local')
         self.assertEqual((status, body, headers['x-site']), (200, b'/api/users?q=1', 'mixed'))
         self.assertEqual(self.server.request('/api/health?detail=1', host='mixed.local')[2], b'healthy')
+        self.assertEqual(self.server.request('/stripped/users?q=1', host='mixed.local')[2], b'/users?q=1')
+        self.assertEqual(self.server.request('/mounted/', host='mixed.local')[2], b'hello static')
+        self.assertEqual(self.server.request('/mounted/nested?q=1', host='mixed.local')[1]['location'], '/mounted/nested/?q=1')
         self.assertEqual(self.server.request('/old', host='mixed.local')[1]['location'], 'https://example.com/new')
         self.assertEqual(self.server.request('/api', host='mixed.local')[0], 404)
         self.assertEqual(self.server.request('/health', host='routes.local')[2], b'up')

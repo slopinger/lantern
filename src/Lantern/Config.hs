@@ -8,7 +8,7 @@ import Control.Monad (unless, when)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import Data.Char (isAscii, isAlphaNum, toLower)
-import Data.List (nub, sortOn, find)
+import Data.List (nub, sortOn, find, isSuffixOf)
 import Data.IP (IPv6)
 import Text.Read (readMaybe)
 import qualified Data.Text as T
@@ -24,7 +24,7 @@ import Lantern.HTTP (validToken, lower)
 data Endpoint = Endpoint { endpointHost :: String, endpointPort :: Int } deriving (Eq, Show)
 data TLSMode = Plain | Manual FilePath FilePath | Automatic String FilePath deriving (Eq, Show)
 data Upstream = HTTP Endpoint | HTTPS Endpoint deriving (Eq, Show)
-data Action = Root FilePath | Proxy Upstream | Respond B.ByteString | Redirect B.ByteString | Routes [(B.ByteString,Action)] (Maybe Action) deriving (Eq, Show)
+data Action = Root FilePath | Proxy Upstream | Respond B.ByteString | Redirect B.ByteString | StripPrefix B.ByteString Action | Routes [(B.ByteString,Action)] (Maybe Action) deriving (Eq, Show)
 data Site = Site { siteHost :: B.ByteString, siteAction :: Action, siteHeaders :: [(B.ByteString,B.ByteString)] } deriving (Eq, Show)
 data Config = Config
   { listen :: Endpoint, tlsMode :: TLSMode, sites :: [Site]
@@ -90,16 +90,19 @@ entry = do
       notFollowedBy (char '}')
       key <- word
       case key of
-        "handle" -> do
+        handler | handler `elem` ["handle","handle_path"] -> do
           path <- word
           unless (validRoute path) (fail "handle needs an ASCII path, exact or ending in /*, without query/fragment")
+          when (handler == "handle_path" && not ("/*" `isSuffixOf` path)) (fail "handle_path requires a /prefix/* pattern")
           symbol "{"
           inner <- many directive
           symbol "}"
           case inner of
             [Left action] -> case action of
               Routes{} -> fail "nested handles are unsupported"
-              _ -> pure (Left (Routes [(C.pack path,action)] Nothing))
+              _ -> do
+                let selected = if handler == "handle_path" then StripPrefix (C.pack (take (length path-2) path)) action else action
+                pure (Left (Routes [(C.pack path,selected)] Nothing))
             _ -> fail "handle needs one action; place shared headers at site level"
         "root" -> Left . Root <$> word
         "reverse_proxy" -> do
@@ -135,19 +138,21 @@ validRoute path = not (null path) && head path == '/' && length path <= 8192 &&
 
 -- Resolve only against the raw escaped URL path, never the query. Longest
 -- match wins; exact wins over a prefix of the same length, then default/404.
-routeSite :: B.ByteString -> Site -> Maybe Site
-routeSite target site = (\action -> site {siteAction=action}) <$> choose (siteAction site)
+routeSite :: B.ByteString -> Site -> Maybe (Site,B.ByteString)
+routeSite target site = (\(action,forwarded) -> (site {siteAction=action},forwarded)) <$> choose (siteAction site)
   where
     path = B.takeWhile (/=63) target
     choose (Routes routes fallback) = case find (matches . fst) routes of
       Just (_,action) -> choose action
       Nothing -> fallback >>= choose
-    choose action = Just action
+    choose (StripPrefix prefix action) = (\(leaf,forwarded) -> (leaf,B.drop (B.length prefix) forwarded)) <$> choose action
+    choose action = Just (action,target)
     matches pattern' | B.isSuffixOf "*" pattern' = B.init pattern' `B.isPrefixOf` path
                      | otherwise = pattern' == path
 
 leafActions :: Action -> [Action]
 leafActions (Routes routes fallback) = concatMap (leafActions . snd) routes ++ maybe [] leafActions fallback
+leafActions (StripPrefix _ action) = leafActions action
 leafActions action = [action]
 
 parseEndpoint :: String -> Either String Endpoint
@@ -277,6 +282,7 @@ resolveConfig source cfg = do
         ok <- doesDirectoryExist root
         unless ok (fail ("root is not a directory: " ++ p))
         pure (Root root)
+      resolveAction (StripPrefix prefix action) = StripPrefix prefix <$> resolveAction action
       resolveAction (Routes routes fallback) = do
         paths <- mapM (\(path,action) -> (,) path <$> resolveAction action) routes
         Routes paths <$> traverse resolveAction fallback

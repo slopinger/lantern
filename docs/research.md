@@ -353,3 +353,9 @@ HTTP/1.0 response framing now rejects Transfer-Encoding before HEAD/304 body
 suppression or informational skipping. RFC 9112 section 6.1 requires treating
 this combination as faulty framing. The old server fixture forwarded 200/304;
 valid HTTP/1.0 fixed/close-delimited and HTTP/1.1 chunked controls remain supported.
+
+The handle_path convenience follows the mount use case documented by
+[Caddy](https://caddyserver.com/docs/caddyfile/directives/handle_path). Lantern
+limits it to /prefix/* and raw escaped matching, keeps the query, and retains
+the original public target for static directory redirects. App-generated links
+and upstream Location/cookie paths still require the application base-path setting.

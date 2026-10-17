@@ -6,6 +6,9 @@ site localhost {
     handle /api/* {
         reverse_proxy http://127.0.0.1:3000
     }
+    handle_path /files/* {
+        root ./public
+    }
     handle /health {
         respond "ok"
     }
