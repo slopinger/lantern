@@ -202,7 +202,7 @@ parseConfig name input = do
   case tlsMode config of
     Automatic email dir -> do
       when (null dir) $ Left "auto_https needs a state directory"
-      unless ('@' `elem` email && all (\c -> c > ' ' && c < '\DEL') email) $ Left "invalid ACME email"
+      unless (null email || ('@' `elem` email && all (\c -> c > ' ' && c < '\DEL') email)) $ Left "invalid ACME email"
       when (endpointPort (listen config) == acmeHTTPPort config) $ Left "automatic HTTPS needs a TLS port separate from HTTP port 80"
       -- This ACME profile emits dns identifiers, never RFC 8738 ip identifiers.
       -- Also reject legacy numeric spellings instead of treating them as DNS.

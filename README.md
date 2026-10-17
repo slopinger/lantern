@@ -19,11 +19,13 @@ blocked. An HTTPS upstream is verified using the system trust store.
 For automatic HTTPS, point public DNS at this server, allow ports 80/443, then run:
 
 ```sh
-lantern serve ./public --domain example.com --email you@example.com
-lantern proxy http://127.0.0.1:3000 --domain app.example.com --email you@example.com
+lantern serve ./public --domain example.com
+lantern proxy http://127.0.0.1:3000 --domain app.example.com
 ```
 
-These use Let's Encrypt production and bind `[::]:443` (IPv4 and IPv6 on Linux).
+Email is optional; add `--email you@example.com` to supply an account contact.
+Without it, ACME registration omits contact information. These commands use
+Let's Encrypt production and bind `[::]:443` (IPv4 and IPv6 on Linux).
 Using ACME agrees to the CA's terms. Add `--staging` while trying issuance; staging
 certificates are not browser-trusted. State defaults to
 `$XDG_DATA_HOME/lantern/production` (or `~/.local/share/lantern/production`), with a
@@ -141,6 +143,10 @@ or roll its certificate back during a reload. Keep state out of git and back it 
 Changing automatic certificate hostnames, listener/TLS paths/mode, CA, or resource
 limits requires a restart; route and header changes can reload.
 
+Use `auto_https "" /var/lib/lantern` to omit email in a Lanternfile. An email,
+when supplied, is sent at account registration; updating an existing account
+contact is not implemented. Other CAs may require contact information.
+
 Manual TLS is `tls /run/credentials/lantern.service/chain.pem /run/credentials/lantern.service/key.pem`
 instead of `auto_https`. The current server profile needs an RSA certificate/key.
 
@@ -235,7 +241,7 @@ support HTTP/1.1 keep-alive and pipelining. HTTP/1.0 has a strict limited profil
 | `max_connections COUNT` | 256, including handshakes and ACME HTTP; max 4096 |
 | `body_limit BYTES` | 1 MiB; max 16 MiB per request |
 | `tls CHAIN KEY` | Manual unencrypted RSA PEM credentials |
-| `auto_https EMAIL STATE_DIR` | Own ACME HTTP-01 automation |
+| `auto_https EMAIL STATE_DIR` | Own ACME HTTP-01 automation; use `""` for no email |
 | `acme_ca HTTPS_URL` | Let's Encrypt production directory |
 | `acme_http_port PORT` | 80; separate HTTP-01/redirect listener |
 | `acme_ca_bundle FILE` | Explicit ACME CA trust roots; default system trust |

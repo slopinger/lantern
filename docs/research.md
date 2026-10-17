@@ -359,3 +359,9 @@ The handle_path convenience follows the mount use case documented by
 limits it to /prefix/* and raw escaped matching, keeps the query, and retains
 the original public target for static directory redirects. App-generated links
 and upstream Location/cookie paths still require the application base-path setting.
+
+ACME contact is optional in [RFC 8555 section 7.3](https://www.rfc-editor.org/rfc/rfc8555.html#section-7.3).
+Quickstart --domain therefore no longer requires email. Empty email omits the
+contact field rather than sending an empty mailto URI; an explicit email retains
+the existing request shape. The local CA fixture covers issuance without contact
+and a later renewal with contact. No new test matrix is added.

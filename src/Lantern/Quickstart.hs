@@ -24,7 +24,7 @@ runQuickstart command args = do
     ("proxy",Just upstream) -> pure ("reverse_proxy " ++ quoted upstream)
     _ -> fail "proxy requires an upstream URL, for example http://127.0.0.1:3000"
   tls <- if not automatic then pure "" else do
-    email <- maybe (fail "--domain enables automatic HTTPS; supply --email for the ACME account") pure (get "--email")
+    let email = maybe "" id (get "--email")
     state <- maybe (getXdgDirectory XdgData ("lantern" </> if staging then "staging" else "production")) pure (get "--state-dir")
     pure ("auto_https " ++ quoted email ++ " " ++ quoted state ++ "\n" ++
           if staging then "acme_ca https://acme-staging-v02.api.letsencrypt.org/directory\n" else "")
@@ -40,7 +40,7 @@ runQuickstart command args = do
     _ -> pure ()
   hPutStrLn stderr (if automatic
     then "Automatic HTTPS for " ++ domain ++ if staging then " (Let's Encrypt staging)" else " (Let's Encrypt production)"
-    else "Serving HTTP on " ++ listener ++ "; use --domain and --email for automatic HTTPS")
+    else "Serving HTTP on " ++ listener ++ "; use --domain for automatic HTTPS")
   runConfigured config
   where
     arguments position options [] = Right (position,options)
@@ -73,7 +73,7 @@ quickstartUsage command = unlines
   , "  --listen ADDRESS:PORT  Bind address (default: 127.0.0.1:8080, or [::]:443 with --domain)"
   , "  --access-log           Emit JSON access events to stdout (queries omitted)"
   , "  --domain HOST          Enable automatic HTTPS for a public DNS hostname"
-  , "  --email ADDRESS        ACME contact email (required with --domain)"
+  , "  --email ADDRESS        Optional ACME account contact email"
   , "  --state-dir DIRECTORY  Certificate state (default: XDG data/lantern/production or staging)"
   , "  --staging              Use Let's Encrypt testing CA (requires --domain)"
   , ""

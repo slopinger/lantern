@@ -173,8 +173,9 @@ acquireCertificate cfg challenges = do
   nonce <- newIORef Nothing
   let provisional = Session trust directoryURL nonceURL accountKey B.empty nonce
       email=case tlsMode cfg of Automatic mail _ -> C.pack mail; _ -> B.empty
+      contact=if B.null email then [] else [("contact",J.Array [str ("mailto:"<>email)])]
   (accountCode,accountHeaders,_) <- signed provisional True newAccount
-    (J.encode (J.object [("termsOfServiceAgreed",J.Bool True),("contact",J.Array [str ("mailto:"<>email)])]))
+    (J.encode (J.object ([("termsOfServiceAgreed",J.Bool True)] ++ contact)))
   unless (accountCode `elem` [200,201]) (fail "ACME account creation failed")
   kid <- maybe (fail "ACME account has no Location") pure (header "location" accountHeaders)
   _ <- checkedURL directoryURL kid

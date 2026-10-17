@@ -135,7 +135,9 @@ class CA(http.server.BaseHTTPRequestHandler):
                 return
             if self.path=='/account':
                 assert protected.get('jwk')==jwk
-                assert json.loads(payload)['termsOfServiceAgreed'] is True
+                account = json.loads(payload)
+                assert account['termsOfServiceAgreed'] is True
+                s['contacts'].append(account.get('contact'))
                 s['jwk']=jwk
                 self.response(201,{'status':'valid'},Location=s['base']+'/account/1')
                 return
@@ -223,7 +225,7 @@ def main():
         https.socket=ctx.wrap_socket(https.socket,server_side=True)
         port,http_port=free_port(),free_port()
         state={'base':f'https://localhost:{https.server_port}','name':'acme-test.example','token':b64(os.urandom(24)).decode(),
-               'nonces':set(),'orders':0,'bad_nonce_done':False,'valid':False,'issued':False,'fail_next':False,
+               'contacts':[],'nonces':set(),'orders':0,'bad_nonce_done':False,'valid':False,'issued':False,'fail_next':False,
                'http_port':http_port,'ca_key':ca_key,'ca_cert':ca_cert,'errors':[],'challenge_fetches':0}
         CA.state=state
         threading.Thread(target=https.serve_forever,daemon=True).start()
@@ -240,7 +242,8 @@ site {state['name']} {{ respond "ACME works" }}
         try:
             # Initial provisioning includes probabilistic RSA key generation and
             # the complete ACME exchange before the HTTPS listener is ready.
-            server=Running(d,cfg,port,startup_timeout=30)
+            server=Running(d,cfg.replace('auto_https test@example.com', 'auto_https ""'),port,startup_timeout=30)
+            assert state['contacts']==[None], 'omitted email must omit the ACME contact field'
             assert state['bad_nonce_done'] and state['orders']==1 and state['challenge_fetches']==1
             assert not state['errors'],state['errors']
             pem=d/'state'/'chain.pem'
@@ -283,6 +286,7 @@ site {state['name']} {{ respond "ACME works" }}
                 wait_for(lambda:'renewed certificate activated' in server.logfile.read_text())
                 interim = x509.load_pem_x509_certificate(pem.read_bytes()).serial_number
                 assert interim != original and fetch() == interim
+                assert state['contacts'][-1]==['mailto:test@example.com']
                 assert observed_headers[-1] is None, 'reload published before trust preparation finished'
                 os.write(trust_writer, (d/'root.pem').read_bytes())
             finally:

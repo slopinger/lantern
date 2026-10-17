@@ -241,7 +241,7 @@ including HEAD/304 and informational paths. The proxy fixture previously saw
 - Prioritize usable server features and Caddy-like setup; tests should support
   those features rather than continually extending protocol edge-case coverage.
 - Quickstart commands: serve [DIRECTORY] and proxy UPSTREAM_URL, default loopback
-  HTTP without a Lanternfile. --domain plus --email enables automatic HTTPS on
+  HTTP without a Lanternfile. --domain enables automatic HTTPS on
   [::]:443; --staging selects testing CA; --state-dir overrides XDG data state.
   Shared configuration parsing/resolution and runWith avoid temporary files or
   a second runtime. SIGHUP refreshes fixed quickstart settings. site * is a
@@ -283,3 +283,9 @@ changes. Keep new verification focused on shipped user-visible behavior.
   can have null metadata; clean idle EOF omitted. Captured before header read;
   valid-request duration resets after parsing. Default logging allocates no events.
   Existing CLI quickstart check validates one JSON event without its query secret.
+
+- Quickstart --domain enables automatic HTTPS without requiring --email. Email
+  is optional; auto_https "" STATE_DIR represents no contact in a Lanternfile.
+  ACME omits contact entirely for empty email, while explicit email still sends
+  mailto contact. Account contact updates are not implemented. Existing CA fixture
+  verifies no-contact initial issuance, cached restart and explicit-contact renewal.
