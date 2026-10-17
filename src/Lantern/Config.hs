@@ -1,14 +1,14 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Lantern.Config
   ( Config(..), Site(..), Action(..), TLSMode(..), Endpoint(..), Upstream(..)
-  , loadConfig, resolveConfig, parseConfig, parseEndpoint, hostName, immutable
+  , loadConfig, resolveConfig, parseConfig, parseEndpoint, hostName, immutable, leafActions, routeSite
   ) where
 import GHC.IO.Encoding (setFileSystemEncoding, utf8)
 import Control.Monad (unless, when)
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Char8 as C
 import Data.Char (isAscii, isAlphaNum, toLower)
-import Data.List (nub)
+import Data.List (nub, sortOn, find)
 import Data.IP (IPv6)
 import Text.Read (readMaybe)
 import qualified Data.Text as T
@@ -24,7 +24,7 @@ import Lantern.HTTP (validToken, lower)
 data Endpoint = Endpoint { endpointHost :: String, endpointPort :: Int } deriving (Eq, Show)
 data TLSMode = Plain | Manual FilePath FilePath | Automatic String FilePath deriving (Eq, Show)
 data Upstream = HTTP Endpoint | HTTPS Endpoint deriving (Eq, Show)
-data Action = Root FilePath | Proxy Upstream | Respond B.ByteString | Redirect B.ByteString deriving (Eq, Show)
+data Action = Root FilePath | Proxy Upstream | Respond B.ByteString | Redirect B.ByteString | Routes [(B.ByteString,Action)] (Maybe Action) deriving (Eq, Show)
 data Site = Site { siteHost :: B.ByteString, siteAction :: Action, siteHeaders :: [(B.ByteString,B.ByteString)] } deriving (Eq, Show)
 data Config = Config
   { listen :: Endpoint, tlsMode :: TLSMode, sites :: [Site]
@@ -74,15 +74,33 @@ entry = do
       symbol "}"
       let acts = [a | Left a <- directives]
           hs = [h | Right h <- directives]
-      case acts of
-        [a] -> pure (Virtual (Site (C.pack (map toLower name)) a hs))
-        _ -> fail "each site needs exactly one root, reverse_proxy, respond, or redirect"
+          routes = concat [rs | Routes rs Nothing <- acts]
+          defaults = [a | a <- acts, case a of Routes{} -> False; _ -> True]
+          ordered = sortOn (\(path,_) -> (negate (B.length (B.takeWhile (/=42) path)), B.isSuffixOf "*" path)) routes
+      when (length routes > 128) (fail "at most 128 handles per site")
+      when (length (nub (map fst routes)) /= length routes) (fail "duplicate handle path")
+      action <- case defaults of
+        [a] -> pure (if null routes then a else Routes ordered (Just a))
+        [] | not (null routes) -> pure (Routes ordered Nothing)
+        _ -> fail "site needs handles and/or one default root, reverse_proxy, respond, or redirect"
+      pure (Virtual (Site (C.pack (map toLower name)) action hs))
     _ -> fail ("unknown directive: " ++ key)
   where
     directive = do
       notFollowedBy (char '}')
       key <- word
       case key of
+        "handle" -> do
+          path <- word
+          unless (validRoute path) (fail "handle needs an ASCII path, exact or ending in /*, without query/fragment")
+          symbol "{"
+          inner <- many directive
+          symbol "}"
+          case inner of
+            [Left action] -> case action of
+              Routes{} -> fail "nested handles are unsupported"
+              _ -> pure (Left (Routes [(C.pack path,action)] Nothing))
+            _ -> fail "handle needs one action; place shared headers at site level"
         "root" -> Left . Root <$> word
         "reverse_proxy" -> do
           url <- word
@@ -104,6 +122,33 @@ entry = do
       | take 7 s == "http://" = HTTP <$> parseEndpoint (drop 7 s)
       | take 8 s == "https://" = HTTPS <$> parseEndpoint (drop 8 s)
       | otherwise = Left "upstreams must be explicit HTTP(S) host:port endpoints (no paths or credentials)"
+
+validRoute :: String -> Bool
+validRoute path = not (null path) && head path == '/' && length path <= 8192 &&
+  all isAscii path && valid (if length path >= 2 && drop (length path-2) path == "/*" then init path else path)
+  where
+    valid [] = True
+    valid ('%':a:b:rest) = hex a && hex b && valid rest
+    valid ('%':_) = False
+    valid (c:rest) = (isAlphaNum c || c `elem` ("/:@!$&'()+,;=-._~[]" :: String)) && valid rest
+    hex c = c `elem` ("0123456789abcdefABCDEF" :: String)
+
+-- Resolve only against the raw escaped URL path, never the query. Longest
+-- match wins; exact wins over a prefix of the same length, then default/404.
+routeSite :: B.ByteString -> Site -> Maybe Site
+routeSite target site = (\action -> site {siteAction=action}) <$> choose (siteAction site)
+  where
+    path = B.takeWhile (/=63) target
+    choose (Routes routes fallback) = case find (matches . fst) routes of
+      Just (_,action) -> choose action
+      Nothing -> fallback >>= choose
+    choose action = Just action
+    matches pattern' | B.isSuffixOf "*" pattern' = B.init pattern' `B.isPrefixOf` path
+                     | otherwise = pattern' == path
+
+leafActions :: Action -> [Action]
+leafActions (Routes routes fallback) = concatMap (leafActions . snd) routes ++ maybe [] leafActions fallback
+leafActions action = [action]
 
 parseEndpoint :: String -> Either String Endpoint
 parseEndpoint s = do
@@ -194,11 +239,12 @@ parseConfig name input = do
         pure ()
       mapM_ validateHeader (siteHeaders s)
       when (length (nub (map fst (siteHeaders s))) /= length (siteHeaders s)) $ Left "duplicate site header"
-      case siteAction s of
+      mapM_ (validateAction (siteHeaders s)) (leafActions (siteAction s))
+    validateAction headers action = case action of
         Root _ -> do
-          when (any ((`elem` ["etag","last-modified","accept-ranges","content-range"]) . fst) (siteHeaders s)) $
+          when (any ((`elem` ["etag","last-modified","accept-ranges","content-range"]) . fst) headers) $
             Left "static validator and range headers are generated by Lantern"
-          when (any (\(key,value) -> key=="content-type" && B.length value>8192) (siteHeaders s)) $
+          when (any (\(key,value) -> key=="content-type" && B.length value>8192) headers) $
             Left "static Content-Type exceeds 8192 bytes"
         Redirect url -> unless (("https://" `B.isPrefixOf` url || "http://" `B.isPrefixOf` url) &&
                           B.all (\c -> c > 32 && c < 127) url) $ Left "redirect needs an absolute ASCII HTTP(S) URL"
@@ -226,13 +272,18 @@ resolveConfig source cfg = do
   _ <- (N.getAddrInfo (Just N.defaultHints {N.addrFlags=[N.AI_NUMERICHOST,N.AI_NUMERICSERV],N.addrSocketType=N.Stream})
     (Just (endpointHost (listen cfg))) (Just (show (endpointPort (listen cfg)))) :: IO [N.AddrInfo])
   let resolve p = if isAbsolute p then p else takeDirectory absolute </> p
-  resolved <- mapM (\s -> case siteAction s of
-    Root p -> do
-      root <- canonicalizePath (resolve p)
-      ok <- doesDirectoryExist root
-      unless ok (fail ("root is not a directory: " ++ p))
-      pure s {siteAction=Root root}
-    _ -> pure s) (sites cfg)
+      resolveAction (Root p) = do
+        root <- canonicalizePath (resolve p)
+        ok <- doesDirectoryExist root
+        unless ok (fail ("root is not a directory: " ++ p))
+        pure (Root root)
+      resolveAction (Routes routes fallback) = do
+        paths <- mapM (\(path,action) -> (,) path <$> resolveAction action) routes
+        Routes paths <$> traverse resolveAction fallback
+      resolveAction action = pure action
+  resolved <- mapM (\site -> do
+    action <- resolveAction (siteAction site)
+    pure site {siteAction=action}) (sites cfg)
   mode <- case tlsMode cfg of
     Manual c k -> pure (Manual (resolve c) (resolve k))
     Automatic email dir -> Automatic email <$> makeAbsolute (resolve dir)

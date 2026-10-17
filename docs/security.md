@@ -264,3 +264,10 @@ automatically close writes. The server uses lantern-http readRequestMaybe to
 finish cleanly at a request boundary without emitting HTTP 400 after a peer
 close. Partial request EOF still fails. Tests cover plain TCP half-close and an
 OpenSSL TLS unwrap after a complete keepalive response, plus idle stop/draining.
+
+Path handlers match the raw escaped path, excluding query text. They do not
+decode, normalize or strip prefixes; matching is not an authorization boundary.
+Static actions retain confined path decoding, and proxy actions retain the full
+original target. Most specific matching action wins; absent default/match is 404.
+Shared header restrictions apply to every leaf, and proxy trust/root resolution
+traverse handler actions during configuration preparation.

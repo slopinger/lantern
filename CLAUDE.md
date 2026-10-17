@@ -249,3 +249,11 @@ including HEAD/304 and informational paths. The proxy fixture previously saw
 Quickstart automatic file serving rejects state inside the canonical document
 root before creating state or contacting the CA. Prefer separate production and
 staging directories. Explicit public bind/domain flags retain their usual effects.
+
+- Path routing: handle /exact or /prefix/* { ACTION }; optional one default action.
+  Longest raw escaped path match, exact before equal-length prefix; query excluded
+  from matching and preserved upstream. No stripping, normalization or nesting.
+  Max 128 unique patterns/site; shared headers validated against every leaf.
+  Recursive root resolution and proxy trust detection cover handler actions.
+  Missing route/default returns 404. ACME HTTP-01 dispatch bypasses path routing.
+  Routes reload within existing snapshots; quickstart remains unchanged.

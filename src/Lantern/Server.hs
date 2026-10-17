@@ -74,11 +74,11 @@ prepare c = do
 
 prepareProxyTrust :: Config -> IO (Maybe TLS.TrustStore)
 prepareProxyTrust c
-  | any secure (sites c) = Just <$> maybe TLS.systemTrust TLS.trustFile (proxyTrust c)
+  | any secure (concatMap (leafActions . siteAction) (sites c)) = Just <$> maybe TLS.systemTrust TLS.trustFile (proxyTrust c)
   | otherwise = do
       forM_ (proxyTrust c) (void . TLS.trustFile)
       pure Nothing
-  where secure site=case siteAction site of Proxy (HTTPS _) -> True; _ -> False
+  where secure action=case action of Proxy (HTTPS _) -> True; _ -> False
 
 runServer :: FilePath -> IO ()
 runServer file = runWith (loadConfig file)
@@ -302,8 +302,10 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
                       Nothing -> find ((=="*") . siteHost) (sites current)
                 site <- maybe (failHTTP 421 "unknown host") pure matched
                 case challenges of
-                  Nothing -> let code=case siteAction site of Proxy{} -> 504; _ -> 408
-                             in deadline (writeSeconds limits) code (dispatch current roots cache site req body peer transport isHead closeAfter headOut rawSend)
+                  Nothing -> do
+                    selected <- maybe (failHTTP 404 "no matching route") pure (routeSite (reqTarget req) site)
+                    let code=case siteAction selected of Proxy{} -> 504; _ -> 408
+                    deadline (writeSeconds limits) code (dispatch current roots cache selected req body peer transport isHead closeAfter headOut rawSend)
                   Just table -> do
                     unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "HTTP-01 requires GET or HEAD"
                     answer <- ACME.challengeResponse table host (reqTarget req)
@@ -386,6 +388,7 @@ dispatch cfg roots cache site req body peer _transport isHead closeAfter headOut
       serve `catch` \(e :: IOException) ->
         if isDoesNotExistError e || isPermissionError e then failHTTP 404 "file not found" else throwIO e
     Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send
+    Routes{} -> failHTTP 500 "unresolved route"
   where
     extra = siteHeaders site
 

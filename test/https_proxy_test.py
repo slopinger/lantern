@@ -83,7 +83,7 @@ class Tests(unittest.TestCase):
                     thread.start()
                     port = free_port()
                     config = (f'listen 127.0.0.1:{port}\nproxy_ca_bundle root.pem\n'
-                              f'write_timeout 4\nsite localhost {{ reverse_proxy https://localhost:{backend.server_port} }}\n')
+                              f'write_timeout 4\nsite localhost {{ handle /* {{ reverse_proxy https://localhost:{backend.server_port} }} }}\n')
                     server = None
                     Backend.seen = None
                     try:

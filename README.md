@@ -115,7 +115,7 @@ instead of `auto_https`. The current server profile needs an RSA certificate/key
 
 ## Routes and configuration
 
-Each hostname has one action. `site *` is an optional fallback after exact host
+Each hostname has an optional default action and path handlers. `site *` is an optional fallback after exact host
 matching for plain/manual TLS configurations; automatic HTTPS requires explicit
 DNS hostnames. Add multiple `site` blocks for virtual hosts:
 
@@ -136,6 +136,34 @@ Redirect URLs and response header names must be ASCII. Percent-encode Unicode
 in redirect paths and use DNS A-labels for internationalized hosts. Bodies and
 header values retain UTF-8 text. Unsupported Unicode wire fields fail validation
 with a source line instead of silently changing characters.
+
+Combine actions under one host with path handlers:
+
+```text
+site example.com {
+    root ./public
+    handle /api/* {
+        reverse_proxy http://127.0.0.1:3000
+    }
+    handle /api/health {
+        respond "healthy"
+    }
+}
+```
+
+`handle` takes an exact path or a prefix ending in `/*`. The longest matching
+path wins; an exact match wins over a prefix of the same length, regardless of
+configuration order. Matching uses the raw escaped path without its query.
+`/api/*` matches `/api/users`, but not `/api`; add an exact handler for that path
+if needed. The original path and query reach the upstream unchanged. A root in a
+handler also keeps the complete path. URL escapes are not normalized for matching.
+
+The ordinary site action is the fallback. A site with only handlers returns 404
+when none matches. Each handler contains one root, reverse_proxy, respond or
+redirect action; put shared headers at site level. Nested handlers and duplicate
+patterns are rejected; at most 128 handlers per site. Roots remain relative to
+the Lanternfile, confined and checked at startup. HTTPS upstreams retain normal
+certificate verification. Handler changes reload with SIGHUP.
 
 Quoted values support spaces, escaped quotes and backslashes. `#` starts a comment
 outside quotes. Unknown directives, duplicate global directives, duplicate hosts,
@@ -206,8 +234,8 @@ no implicit proxies, redirects, pooled connections, or request retries. A global
 64 MiB reservation budget bounds concurrent request-body memory; excess body
 requests get 503. Known upstream responses over 1 GiB are rejected before headers.
 
-Not included: HTTP/2/3, WebSockets/CONNECT, compression, wildcard hosts, DNS-01,
-external-account binding, ACME revocation/account rotation, or configurable route
+Not included: HTTP/2/3, WebSockets/CONNECT, compression, wildcard DNS hosts, DNS-01,
+external-account binding, ACME revocation/account rotation, or regular-expression/method route
 matchers. This is not a complete Caddy replacement.
 
 ## Independent libraries

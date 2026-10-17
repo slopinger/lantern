@@ -23,7 +23,9 @@ main=do
   check "body default" (bodyLimit cfg==1048576)
   httpsCfg<-either fail pure (parseConfig "test" "site localhost { reverse_proxy https://upstream:443 }")
   check "HTTPS upstream parsed" (map siteAction (sites httpsCfg)==[Proxy (HTTPS (Endpoint "upstream" 443))])
-  forM_ ["", "unknown x", "site localhost { nonsense x }", "site localhost { respond a root b }",
+  forM_ ["site a { handle /x { respond a } handle /x { respond b } }",
+      "site a { handle /bad?query { respond a } }", "site a { handle /api* { respond a } }",
+      "site a { handle /x { root public } header ETag forged }", "", "unknown x", "site localhost { nonsense x }", "site localhost { respond a root b }",
       "site localhost { }", "site localhost { respond x } site localhost { respond y }",
       "site LOCALHOST { respond x } site localhost { respond y }",
       "site localhost { header Content-Length 5 respond x }", "listen 0.0.0.0:99999 site a { respond x }",

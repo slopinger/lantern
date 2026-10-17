@@ -1,0 +1,12 @@
+# Run: lantern run examples/Mixed.Lanternfile
+# Start an API on 127.0.0.1:3000 for /api/* requests.
+listen 127.0.0.1:8080
+site localhost {
+    root ./public
+    handle /api/* {
+        reverse_proxy http://127.0.0.1:3000
+    }
+    handle /health {
+        respond "ok"
+    }
+}
