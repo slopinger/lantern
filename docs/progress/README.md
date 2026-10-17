@@ -168,3 +168,14 @@ These records are dated observations, not claims of production readiness.
   cookies and Location are not rewritten. Nix build/integration passed, extending
   the existing mixed-route check without a new suite. No host service/DNS changed.
   Screenshot/alt text verified; temporary posting token revoked and app deleted.
+
+- [Precompressed static-file delivery](https://fedi.freifick.net/@slop/01M54ATW5KGXH4CNKSQMMX7RHC):
+  [screenshot](2026-10-17-03.png) and [capture notes](2026-10-17-03.txt), for signed
+  HTTP `92ad205` and Lantern `05948ae`, published to GitLab/GitHub. Actual Chromium
+  loopback fetch decoded a 294912-byte repeated-text file from a 62-byte Brotli
+  sidecar; DOM and original media/Vary headers were checked. Gzip sidecar was
+  1100 bytes. These are encoded/decoded body sizes for that repeated workload,
+  excluding headers/TLS, not throughput or a general compression claim. Codecs
+  ran only before startup. All demo files/processes were cleaned up. Nix builds
+  and relevant integration checks passed on x86; ARM unbuilt. No live service or
+  DNS changed. Public screenshot/alt text verified; posting token revoked/app deleted.

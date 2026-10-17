@@ -1,0 +1,22 @@
+Lantern precompressed preview · 2026-10-17
+
+Actual Chromium screenshot of a temporary loopback Lantern instance, serving a
+static demo page and payload.txt through quickstart --precompressed. The original
+payload repeats a 72-byte ASCII sentence 4096 times: 294912 bytes. It was compressed
+before startup with Brotli -q 5 (62-byte .br) and Python gzip (1100-byte .gz).
+No codec ran inside Lantern. Chromium fetched /payload.txt, received Content-Encoding
+br, decoded it, and displayed its decoded text length and compressed Content-Length.
+The captured DOM verified br, the expected decoded length and 62-byte body length.
+The screenshot also displays Vary: Accept-Encoding and the original text/plain type.
+
+This is a repeated-text demonstration, not a general compression ratio or server
+throughput benchmark. Sizes exclude HTTP headers and TLS. All demo files and the
+server were temporary and cleaned up; no production host service/DNS changed.
+
+HTTP 92ad205 adds bounded content-coding preference negotiation. Lantern 05948ae
+selects confined sidecars after opening the original, retains per-file validators,
+checks sidecar mtime, merges Vary, supports conditional/HEAD, and retains the
+existing disabled-range policy for encoded files. Publishers must deploy matching
+originals/sidecars; mtime is not proof of equivalent content. Existing static suite
+adds one focused feature check; Nix builds and relevant checks passed on x86.
+Experimental and unaudited; ARM unbuilt.
