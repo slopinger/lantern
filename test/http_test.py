@@ -83,12 +83,20 @@ class Backend(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass
     def do_HEAD(self):
+        if self.path.startswith("/http10-transfer-"):
+            return self.do_GET()
         self.send_response(200)
         self.send_header('Content-Length', '123')
         self.end_headers()
     def do_GET(self):
         type(self).seen = list(self.headers.items())
-        if self.path == '/bad-framing':
+        if self.path.startswith('/http10-transfer-'):
+            status = self.path.rsplit('-', 1)[1].encode()
+            self.wfile.write(b'HTTP/1.0 ' + status + b' Test\r\nTransfer-Encoding: chunked\r\n\r\n'
+                             b'0\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 0\r\n\r\n')
+            self.wfile.flush()
+            self.close_connection = True
+        elif self.path == '/bad-framing':
             self.wfile.write(b'HTTP/1.1 200 OK\r\nContent-Length: 5\r\nTransfer-Encoding: chunked\r\n\r\n0\r\n\r\n')
             self.wfile.flush()
             self.close_connection = True
@@ -223,6 +231,13 @@ site redirect.local {{ redirect https://example.com/fixed }}
             self.assertEqual((r.status, r.read()), (200, b'abc'))
         for wire in [b'GET / HTTP/1.1\r\nHost:', b'POST / HTTP/1.1\r\nHost: proxy.local\r\nContent-Length: 3\r\n\r\na']:
             self.assertEqual(self.server.raw(wire)[0], 408)
+
+    def test_proxy_rejects_http10_transfer_encoding(self):
+        for method, status in [('GET', 200), ('HEAD', 200), ('GET', 304), ('GET', 103)]:
+            with self.subTest(method=method, status=status):
+                actual, _, _ = self.server.request(f'/http10-transfer-{status}',
+                                                    host='proxy.local', method=method)
+                self.assertEqual(actual, 502)
 
     def test_proxy_headers_and_streaming(self):
         status, _, body = self.server.request('/path?x=1', host='proxy.local', headers={

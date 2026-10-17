@@ -233,3 +233,7 @@ automatically close writes. The server uses lantern-http readRequestMaybe to
 finish cleanly at a request boundary without emitting HTTP 400 after a peer
 close. Partial request EOF still fails. Tests cover plain TCP half-close and an
 OpenSSL TLS unwrap after a complete keepalive response, plus idle stop/draining.
+
+Pinned HTTP response parsing rejects Transfer-Encoding on HTTP/1.0 status lines,
+including HEAD/304 and informational paths. The proxy fixture previously saw
+200/304; now these faulty upstream messages produce 502 before downstream commit.

@@ -348,3 +348,8 @@ HTTP 790d421 adds readRequestMaybe for clean connection EOF before any next
 request byte, retaining strict errors for partial requests/backend failures.
 The server adopts it so a TLS peer ending its request stream receives an
 explicit TLS closure reply without an invented HTTP error response.
+
+HTTP/1.0 response framing now rejects Transfer-Encoding before HEAD/304 body
+suppression or informational skipping. RFC 9112 section 6.1 requires treating
+this combination as faulty framing. The old server fixture forwarded 200/304;
+valid HTTP/1.0 fixed/close-delimited and HTTP/1.1 chunked controls remain supported.
