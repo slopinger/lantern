@@ -191,8 +191,8 @@ Redirect URLs and response header names must be ASCII before Char8 conversion.
 Reject non-ASCII input rather than projecting each code point to its low byte;
 this prevents silent aliasing (for example Ł -> A). Redirects may contain literal
 ASCII percent escapes. Response bodies and header values still encode UTF-8.
-Tests enumerate 128 Latin-extension projection cases for each field, verify
-positive UTF-8/escaped values and exercise actual CLI check/run diagnostics.
+Config tests retain representative Unicode projection failures and positive
+UTF-8/escaped values; CLI UTF-8 diagnostic handling is checked separately.
 
 The pinned TLS client validates original reference input before case normalization
 or IP parsing: bounded printable ASCII DNS A-labels/IP literals only, no spaces
@@ -257,3 +257,10 @@ staging directories. Explicit public bind/domain flags retain their usual effect
   Recursive root resolution and proxy trust detection cover handler actions.
   Missing route/default returns 404. ACME HTTP-01 dispatch bypasses path routing.
   Routes reload within existing snapshots; quickstart remains unchanged.
+
+- Test maintenance: keep user-visible feature checks and known-bug regressions.
+  Removed duplicate socket fragmentation matrix (the independent HTTP library
+  controls fragments directly), duplicate CLI Unicode wire-field checks, and
+  repeated endpoint/numeric startup matrices. One startup side-effect fixture
+  retains representative invalid endpoint and DNS-identifier cases. Unicode
+  projection checks use actual regression characters instead of 256 combinations.

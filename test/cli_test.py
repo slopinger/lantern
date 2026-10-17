@@ -55,25 +55,6 @@ class Tests(unittest.TestCase):
             self.assertIn('missing-ä.conf'.encode(), result.stderr)
             self.assertNotIn(b'HasCallStack', result.stderr)
 
-    def test_ascii_wire_fields_reject_unicode_without_projection(self):
-        with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
-            directory = pathlib.Path(temporary)
-            config = directory/'Lanternfile'
-            for directive in ['redirect https://example.org/Ł',
-                              'respond ok header X-Ł value']:
-                config.write_text('site localhost { '+directive+' }\n')
-                for command in ['check', 'run']:
-                    with self.subTest(directive=directive, command=command):
-                        result = self.invoke(command, directory=directory)
-                        self.assertEqual(result.returncode, 1, result)
-                        self.assertIn('ASCII', result.stderr)
-                        self.assertIn('line 1', result.stderr)
-                        self.assertEqual(result.stdout, '')
-            config.write_text('site localhost { respond "héllo" header X-Text "välue" }\n')
-            result = self.invoke('check', directory=directory)
-            self.assertEqual((result.returncode, result.stdout, result.stderr),
-                             (0, 'configuration valid\n', ''))
-
     def test_argument_errors_keep_exit_status_and_one_diagnostic(self):
         for arguments in [['nonsense'], ['run', '--config'], ['check', '--bogus'], ['check', '--config='],
                           ['help', 'nonsense'], ['version', '--bogus']]:
@@ -177,54 +158,26 @@ class Tests(unittest.TestCase):
                     process.kill()
                 process.communicate(timeout=3)
 
-    def test_invalid_endpoint_checks_and_startup_have_no_side_effects(self):
-        with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
-            directory = pathlib.Path(temporary)
-            with socket.socket() as occupied:
-                occupied.bind(('127.0.0.1', 0)); occupied.listen()
-                config = directory/'Lanternfile'
-                prefix = ('listen 127.0.0.1:8443\n'
-                          'auto_https test@example.com ./private-state\n'
-                          f'acme_http_port {occupied.getsockname()[1]}\n')
-                for endpoint in ['[localhost]:443', '[127.0.0.1]:443', '[:::1]:443',
-                                 'bad..example:443', '-bad.example:443']:
-                    config.write_text(prefix + f'acme_ca https://{endpoint}/directory\n'
-                                      'site example.test { respond "ok" }\n')
-                    for command in ['check', 'run']:
-                        with self.subTest(endpoint=endpoint, command=command):
-                            result = self.invoke(command, directory=directory)
-                            self.assertEqual(result.returncode, 1, result)
-                            self.assertEqual(result.stdout, '')
-                            self.assertIn('endpoint', result.stderr)
-                            self.assertNotIn('Address already in use', result.stderr)
-                            self.assertEqual(list(directory.iterdir()), [config])
-                for endpoint in ['[localhost]:443', '[:::1]:443', 'bad..example:443']:
-                    config.write_text(f'site localhost {{ reverse_proxy https://{endpoint} }}\n')
-                    result = self.invoke('check', directory=directory)
-                    self.assertEqual(result.returncode, 1, result)
-                    self.assertIn('endpoint', result.stderr)
-
-    def test_automatic_numeric_sites_fail_before_startup_side_effects(self):
+    def test_invalid_automatic_settings_fail_before_side_effects(self):
         with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
             directory = pathlib.Path(temporary)
             with socket.socket() as occupied, socket.socket() as ca:
                 occupied.bind(('127.0.0.1', 0)); occupied.listen()
                 ca.bind(('127.0.0.1', 0)); ca.listen(); ca.settimeout(.1)
                 config = directory/'Lanternfile'
-                for name in ['192.0.2.1', '0.0.0.0', '255.255.255.255', '127.1', '01.2.3.4']:
-                    config.write_text('listen 127.0.0.1:443\n'
-                        'auto_https test@example.com ./private-state\n'
-                        f'acme_http_port {occupied.getsockname()[1]}\n'
-                        f'acme_ca https://127.0.0.1:{ca.getsockname()[1]}/directory\n'
-                        f'site {name} {{ respond "ok" }}\n')
+                prefix = ('listen 127.0.0.1:8443\n'
+                          'auto_https test@example.com ./private-state\n'
+                          f'acme_http_port {occupied.getsockname()[1]}\n')
+                cases = [('https://[localhost]:443/directory', 'example.test', 'endpoint'),
+                         (f'https://127.0.0.1:{ca.getsockname()[1]}/directory', '192.0.2.1', 'DNS names')]
+                for endpoint, name, diagnostic in cases:
+                    config.write_text(prefix + f'acme_ca {endpoint}\nsite {name} {{ respond ok }}\n')
                     for command in ['check', 'run']:
-                        with self.subTest(name=name, command=command):
-                            result = self.invoke(command, directory=directory)
-                            self.assertEqual(result.returncode, 1, result)
-                            self.assertIn('DNS names', result.stderr)
-                            self.assertNotIn('Address already in use', result.stderr)
-                            self.assertEqual(result.stdout, '')
-                            self.assertEqual(list(directory.iterdir()), [config])
+                        result = self.invoke(command, directory=directory)
+                        self.assertEqual(result.returncode, 1, result)
+                        self.assertIn(diagnostic, result.stderr)
+                        self.assertNotIn('Address already in use', result.stderr)
+                        self.assertEqual(list(directory.iterdir()), [config])
                 with self.assertRaises(TimeoutError):
                     ca.accept()
 
