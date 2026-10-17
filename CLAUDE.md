@@ -300,3 +300,21 @@ changes. Keep new verification focused on shipped user-visible behavior.
   withOptionalFileBelow suppresses only acquisition failures; callback errors never
   trigger representation fallback. Existing static suite adds one focused feature
   check. Quickstart state/root isolation includes precompressed roots.
+
+## Host notes and working preferences
+- Sibling checkouts on the server: `~/src/lantern-http`, `~/src/lantern-tls` (independent
+  projects, pinned here by flake input). No production Lantern service is installed;
+  existing Caddy sites remain authoritative.
+- Let's Encrypt staging issuance, cached restart and renewal passed on 2026-10-15. The
+  temporary `lantern-test.freifick.net` DNS records and Caddy block were removed.
+  Private staging account/site keys and config remain in `~/.local/share/lantern-staging/`
+  (0700/0600), outside git. Never add staging roots to normal system trust.
+- Development preference (2026-10-17): prioritize useful server features and Caddy-like
+  setup over further expansion of protocol edge-case tests. Keep focused verification for
+  shipped features and required Nix checks; consolidate redundant edge-case matrices while
+  keeping feature-level checks and representative known-bug regressions.
+- Verification scope: package/integration checks for routing-only changes; also the booted
+  NixOS service check (`nix build .#checks.x86_64-linux.service -L`) for module, packaging or
+  host changes. ARM has never been built.
+- Dated milestones with commits and verification: `docs/milestones.md`. Public progress posts
+  and screenshots: `docs/progress/`.
