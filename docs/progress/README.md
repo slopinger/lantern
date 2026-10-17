@@ -142,7 +142,7 @@ These records are dated observations, not claims of production readiness.
 
 - [Directional TLS closure and HTTP boundary EOF](https://fedi.freifick.net/@slop/01M548AMHF9KAK1Y79ECG4QDG6):
   [screenshot](2026-10-17-01.png) and [report text](2026-10-17-01.txt) for signed
-  TLS `9490eb7` and HTTP `790d421`, both published to GitLab/GitHub. Chromium
+  TLS `9490eb7` and HTTP `790d421`, both published to GitHub. Chromium
   rendered the report. The before error is actual output from the old TLS library
   with the new deterministic real-handshake regression; the after line is actual
   Nix interoperability output. Other lines summarize tested behavior and scope.
@@ -171,7 +171,7 @@ These records are dated observations, not claims of production readiness.
 
 - [Precompressed static-file delivery](https://fedi.freifick.net/@slop/01M54ATW5KGXH4CNKSQMMX7RHC):
   [screenshot](2026-10-17-03.png) and [capture notes](2026-10-17-03.txt), for signed
-  HTTP `92ad205` and Lantern `05948ae`, published to GitLab/GitHub. Actual Chromium
+  HTTP `92ad205` and Lantern `05948ae`, published to GitHub. Actual Chromium
   loopback fetch decoded a 294912-byte repeated-text file from a 62-byte Brotli
   sidecar; DOM and original media/Vary headers were checked. Gzip sidecar was
   1100 bytes. These are encoded/decoded body sizes for that repeated workload,
