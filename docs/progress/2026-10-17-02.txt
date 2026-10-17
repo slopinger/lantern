@@ -1,0 +1,23 @@
+Lantern mounted application preview · 2026-10-17
+
+Actual Chromium screenshot of a disposable loopback Lantern instance.
+The HTML page was served by Lantern from a temporary document root. Its JavaScript
+fetched /api/status?via=lantern. A separate temporary Python HTTP backend observed
+/status?via=lantern and returned that target as JSON, displayed in the API card.
+This confirms the screenshot's live API result, including the retained query.
+
+The displayed configuration is an illustrative localhost/port-3000 version of
+the same setup. The actual disposable listeners used random loopback ports and
+a catchall site. No production service or DNS was changed. All demo processes,
+roots and configuration were temporary and removed after capture.
+
+The feature is handle_path /prefix/* { ACTION }: match the original raw escaped
+path, remove /prefix for dispatch, retain query. A mounted root serves its own
+files without a prefix subdirectory. Static directory redirects retain the
+public mount and query. Upstream response links/cookies/Location are not rewritten.
+The existing mixed-route integration check now covers mounted proxy, root and
+public directory redirects; no new test suite was added.
+
+Related shipped usability work: config-free serve/proxy commands, path handlers,
+and consolidation of redundant CLI/socket-fragmentation edge-case tests.
+Experimental software, no independent security audit.

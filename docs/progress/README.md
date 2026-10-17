@@ -155,3 +155,16 @@ These records are dated observations, not claims of production readiness.
   Crypton primitives retained; experimental and unaudited, ARM unbuilt, production
   unchanged. Public screenshot/alt text verified; temporary token revoked and its
   OAuth app deleted.
+
+- [Config-free startup and mounted application preview](https://fedi.freifick.net/@slop/01M549ESK6QGF5E0922SAT2TE2):
+  [screenshot](2026-10-17-02.png) and [capture notes](2026-10-17-02.txt), for
+  signed mount feature `5e74703` following quickstart/path routing/test cleanup.
+  Chromium captured a real temporary loopback page served by Lantern from disk.
+  Its JavaScript fetched /api/status?via=lantern; a separate temporary backend
+  observed /status?via=lantern and returned it for the live card. The displayed
+  config uses illustrative localhost/port 3000; actual listeners used random
+  loopback ports and a catchall site. All preview processes/files were removed.
+  Mounts retain query and public static directory redirects; upstream links,
+  cookies and Location are not rewritten. Nix build/integration passed, extending
+  the existing mixed-route check without a new suite. No host service/DNS changed.
+  Screenshot/alt text verified; temporary posting token revoked and app deleted.
