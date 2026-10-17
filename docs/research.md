@@ -294,3 +294,18 @@ ASCII percent escapes remain untouched. Tests enumerate the first 128 Latin
 extension code points for each boundary, plus positive byte preservation and
 real CLI check/run failures. This is configuration fidelity, not a new URI/IRI
 normalization or arbitrary header-field semantics implementation.
+
+## Request admission during graceful stop (2026-10-17)
+
+The connection registry already serialized new sockets with shutdown, but the
+request loop did not consult that boundary. A held upstream plus idle keep-alive
+fixture reproduced a new 200 response after SIGTERM had closed the listener.
+Request admission now reads the same locked stop state after complete headers
+and before body reservation, 100-continue or dispatch. If admitted before stop,
+the request may finish; later work is rejected with 503 and connection closure.
+Response heads committed during drain replace Connection with close, and a
+completed request does not process buffered pipeline work after stop. Already
+committed headers cannot be rewritten. Idle readers remain bounded by the
+existing header/drain deadlines, and the ten-second drain budget is unchanged.
+The fixture verifies refusal of new idle-keepalive work while an active upstream
+finishes successfully, followed by EOF without a second buffered response.

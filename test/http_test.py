@@ -99,6 +99,15 @@ class Backend(http.server.BaseHTTPRequestHandler):
             self.wfile.write(b'HTTP/1.0 200 OK\r\n\r\nclose-body')
             self.wfile.flush()
             self.close_connection = True
+        elif self.path == '/drain-hold' and hasattr(self.server, 'drain_entered'):
+            self.server.drain_entered.set()
+            if not self.server.drain_release.wait(8):
+                self.close_connection = True
+                return
+            self.send_response(200)
+            self.send_header('Content-Length', '7')
+            self.end_headers()
+            self.wfile.write(b'drained')
         elif self.path == '/slow':
             time.sleep(3)
             self.close_connection = True
@@ -273,6 +282,59 @@ site redirect.local {{ redirect https://example.com/fixed }}
                     self.assertEqual(output.count(b'hello text'), 2)
         overflow = b'GET /' + b'a'*8179 + b' HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n'
         self.assertEqual(self.server.raw(overflow)[0], 431)
+
+    def test_shutdown_finishes_active_request_without_admitting_keepalive_work(self):
+        self.server.close()
+        config = self.config.replace('header_timeout 1', 'header_timeout 30').replace('write_timeout 1', 'write_timeout 30')
+        self.server = Running(self.d, config, self.port)
+        self.backend.drain_entered = threading.Event()
+        self.backend.drain_release = threading.Event()
+        try:
+            with socket.create_connection(('127.0.0.1', self.port), timeout=4) as active, \
+                 socket.create_connection(('127.0.0.1', self.port), timeout=4) as idle, \
+                 socket.create_connection(('127.0.0.1', self.port), timeout=4) as expecting:
+                idle.sendall(b'GET / HTTP/1.1\r\nHost: text.local\r\n\r\n')
+                response = http.client.HTTPResponse(idle); response.begin()
+                self.assertEqual((response.status, response.read()), (200, b'hello text'))
+                response.close()
+                expecting.sendall(b'GET / HTTP/1.1\r\nHost: text.local\r\n\r\n')
+                response = http.client.HTTPResponse(expecting); response.begin()
+                self.assertEqual((response.status, response.read()), (200, b'hello text'))
+                response.close()
+                active.sendall(b'GET /drain-hold HTTP/1.1\r\nHost: proxy.local\r\n\r\n'
+                               b'GET / HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n')
+                self.assertTrue(self.backend.drain_entered.wait(3), 'active request did not reach upstream')
+                self.server.proc.send_signal(signal.SIGTERM)
+                deadline = time.monotonic()+3
+                while True:
+                    try:
+                        with socket.create_connection(('127.0.0.1', self.port), timeout=.1):
+                            pass
+                    except OSError:
+                        break
+                    self.assertLess(time.monotonic(), deadline, 'listener stayed open after SIGTERM')
+                    time.sleep(.01)
+                # The closed listener proves stop committed; an existing socket
+                # must not admit new application work after that boundary.
+                idle.sendall(b'GET / HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n')
+                rejected = http.client.HTTPResponse(idle); rejected.begin()
+                self.assertEqual(rejected.status, 503, 'new keepalive request dispatched while draining')
+                self.assertEqual(rejected.getheader('Connection'), 'close')
+                rejected.read(); rejected.close()
+                expecting.sendall(b'POST / HTTP/1.1\r\nHost: proxy.local\r\nContent-Length: 5\r\n'
+                                  b'Expect: 100-continue\r\n\r\n')
+                with expecting.makefile('rb') as reply:
+                    first_line = reply.readline(1024)
+                self.assertTrue(first_line.startswith(b'HTTP/1.1 503 '), first_line)
+                self.backend.drain_release.set()
+                finished = http.client.HTTPResponse(active); finished.begin()
+                self.assertEqual((finished.status, finished.read()), (200, b'drained'))
+                self.assertEqual(finished.getheader('Connection'), 'close')
+                finished.close()
+                self.assertEqual(active.recv(1), b'', 'buffered pipeline request dispatched while draining')
+            self.assertEqual(self.server.proc.wait(timeout=3), 0)
+        finally:
+            self.backend.drain_release.set()
 
     def test_reload_preserves_old_on_error(self):
         self.server.file.write_text(self.config.replace('hello text','new text'))

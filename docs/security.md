@@ -232,3 +232,12 @@ The server config already requires ASCII endpoint names; the independent TLS
 String API now enforces the same input profile. IDNA conversion belongs to the
 caller. TLS tests cover two fold aliases, ASCII/A-label/IP success, and nine
 invalid inputs emitting no ClientHello. No cryptographic primitive changed.
+
+Request admission also shares the registry's stop boundary on existing sockets.
+A complete header admitted before SIGTERM may finish; valid later headers fail
+503 before body/100-continue/dispatch. Responses committed during drain advertise
+Connection: close, and completion does not consume a buffered next request.
+Headers already committed before stop cannot be changed. Idle readers remain
+bounded by header/drain deadlines. The shutdown fixture holds a real upstream
+response, proves listener closure, rejects new idle-keepalive work, completes the
+active response and checks the queued pipeline request is not dispatched.

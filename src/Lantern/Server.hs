@@ -206,7 +206,7 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
                     (_,Just _) -> tlsTransport (do
                       Snapshot _ c _ _ <- readIORef state
                       maybe (fail "missing TLS credentials") pure c) socket'
-                  serveConnection cfg state peer transport challenges bodyBudget `finally` finish transport
+                  serveConnection cfg state registry peer transport challenges bodyBudget `finally` finish transport
             (unmask task `catch` quietConnection) `finally` cleanup
           pure ((stopped,M.insert tid socket' clients),True)
     unless admitted (close socket')) `onException` close socket'
@@ -215,8 +215,8 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
       Just async -> throwIO async
       Nothing -> pure () -- No request paths, credentials, or client data in default logs.
 
-serveConnection :: Config -> IORef Snapshot -> SockAddr -> Transport -> Maybe ACME.Challenges -> IORef Integer -> IO ()
-serveConnection limits state peer transport challenges bodyBudget = do
+serveConnection :: Config -> IORef Snapshot -> Registry -> SockAddr -> Transport -> Maybe ACME.Challenges -> IORef Integer -> IO ()
+serveConnection limits state registry peer transport challenges bodyBudget = do
   reader <- newReader (receive transport)
   let loop count = when (count < 100) $ do
         started <- newIORef False
@@ -225,7 +225,11 @@ serveConnection limits state peer transport challenges bodyBudget = do
             send = deadline (writeSeconds limits) 408 . rawSend
             -- Every use is inside a whole-response deadline, including errors
             -- and HTTP-01. Avoid a timer registration for each streamed chunk.
-            headOut status hs = writeIORef started True >> writeHead rawSend status hs
+            headOut status hs = do
+              stopped <- fst <$> readMVar registry
+              let fields = if stopped then ("connection","close") : filter ((/= "connection") . fst) hs else hs
+              writeIORef started True
+              writeHead rawSend status fields
             errorOut code = do
               sent <- readIORef started
               isHead <- readIORef headRequest
@@ -240,6 +244,10 @@ serveConnection limits state peer transport challenges bodyBudget = do
         continue <- (do
           req <- deadline (headerSeconds limits) 408 (readRequest reader)
           writeIORef headRequest (reqMethod req == "HEAD")
+          -- Serialize request admission with stop, including existing sockets.
+          -- A request admitted before stop may finish; later ones never dispatch.
+          allowed <- not . fst <$> readMVar registry
+          unless allowed $ failHTTP 503 "server draining"
           let hs = reqHeaders req
               closeAfter = connectionClose req || count == 99
               isHead = reqMethod req == "HEAD"
@@ -277,7 +285,9 @@ serveConnection limits state peer transport challenges bodyBudget = do
                     simple headOut rawSend isHead closeAfter 308 [("location","https://"<>authority<>reqTarget req)] "redirecting\n"
             pure (not closeAfter)
           ) `catch` handleError
-        when continue (loop (count+1))
+        when continue $ do
+          stopped <- fst <$> readMVar registry
+          unless stopped (loop (count+1))
   loop (0 :: Int)
 
 -- A global admission budget prevents the connection limit times body limit from

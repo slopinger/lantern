@@ -29,7 +29,10 @@ SIGINT handler still performs its normal graceful stop.
 
 Send **SIGHUP** to reload routes/headers and manual TLS credentials;
 invalid reloads retain the complete working configuration. Send **SIGTERM** for
-a ten-second drain followed by connection cancellation.
+a ten-second drain followed by connection cancellation. Requests admitted before
+stop may finish. Existing keep-alive sockets cannot admit new work after stop;
+responses committed during drain advertise `Connection: close`, and buffered
+following requests are not dispatched. Idle readers remain deadline-bounded.
 
 ## Automatic HTTPS
 
