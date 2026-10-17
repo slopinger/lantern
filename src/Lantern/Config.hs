@@ -1,7 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 module Lantern.Config
   ( Config(..), Site(..), Action(..), TLSMode(..), Endpoint(..), Upstream(..)
-  , loadConfig, parseConfig, parseEndpoint, hostName, immutable
+  , loadConfig, resolveConfig, parseConfig, parseEndpoint, hostName, immutable
   ) where
 import GHC.IO.Encoding (setFileSystemEncoding, utf8)
 import Control.Monad (unless, when)
@@ -189,7 +189,9 @@ parseConfig name input = do
         Virtual site -> Right c {sites=sites c ++ [site]}
       foldEntries c' (tag:seen) rest
     validateSite s = do
-      _ <- hostName (siteHost s)
+      unless (siteHost s == "*") $ do
+        _ <- hostName (siteHost s)
+        pure ()
       mapM_ validateHeader (siteHeaders s)
       when (length (nub (map fst (siteHeaders s))) /= length (siteHeaders s)) $ Left "duplicate site header"
       case siteAction s of
@@ -214,6 +216,13 @@ loadConfig file = do
   when (B.length bytes > 131072) $ fail "configuration exceeds 128 KiB"
   txt <- either (const (fail "configuration must use valid UTF-8")) pure (TE.decodeUtf8' bytes)
   cfg <- either fail pure (parseConfig file (T.unpack txt))
+  resolveConfig absolute cfg
+
+-- Resolve a validated configuration against its logical source location.
+-- Quickstart uses a source in the working directory without reading/writing it.
+resolveConfig :: FilePath -> Config -> IO Config
+resolveConfig source cfg = do
+  absolute <- makeAbsolute source
   _ <- (N.getAddrInfo (Just N.defaultHints {N.addrFlags=[N.AI_NUMERICHOST,N.AI_NUMERICSERV],N.addrSocketType=N.Stream})
     (Just (endpointHost (listen cfg))) (Just (show (endpointPort (listen cfg)))) :: IO [N.AddrInfo])
   let resolve p = if isAbsolute p then p else takeDirectory absolute </> p

@@ -7,6 +7,7 @@ import System.Exit (ExitCode(..), die, exitWith)
 import System.IO (hSetEncoding, stdout, stderr)
 import System.IO.Error (isUserError, ioeGetErrorString)
 import GHC.IO.Encoding (setFileSystemEncoding, utf8)
+import Lantern.Quickstart (runQuickstart, quickstartUsage)
 import Lantern.Server (runServer, checkConfig)
 
 main :: IO ()
@@ -20,8 +21,11 @@ dispatch :: [String] -> IO ()
 dispatch [] = usage
 dispatch [flag] | flag `elem` ["--help","-h","help"] = usage
 dispatch [flag] | flag `elem` ["version","--version"] = putStrLn "lantern 0.1.0"
-dispatch ["help",command] | command `elem` ["run","check"] = commandUsage command
+dispatch ["help",command] | command `elem` ["run","check","serve","proxy"] = commandUsage command
 dispatch ["help",topic] = cliError ("unknown help topic " ++ show topic)
+dispatch (command:arguments) | command `elem` ["serve","proxy"] = case arguments of
+  [flag] | flag `elem` ["--help","-h"] -> commandUsage command
+  _ -> runQuickstart command arguments
 dispatch (command:arguments) | command `elem` ["run","check"] =
   let action = if command == "run" then runServer else checkConfig
   in case arguments of
@@ -45,11 +49,13 @@ usage = putStrLn $ unlines
   [ "Lantern — experimental webserver with automatic HTTPS"
   , "Usage: lantern COMMAND"
   , ""
+  , "  serve [DIRECTORY]       Serve files immediately (default: current directory)"
+  , "  proxy UPSTREAM_URL      Reverse proxy immediately"
   , "  run [FILE]               Serve a Lanternfile (default: ./Lanternfile)"
   , "  check [FILE]             Validate without binding ports or contacting a CA"
   , "  run|check --config FILE  Select a configuration explicitly"
   , "  version                  Print the version"
-  , "  help [run|check]          Show help (-h and --help also work)"
+  , "  help [run|check|serve|proxy]          Show help (-h and --help also work)"
   , ""
   , "Minimal Lanternfile:"
   , "  site localhost { respond \"hello\" }"
@@ -60,6 +66,7 @@ usage = putStrLn $ unlines
   ]
 
 commandUsage :: String -> IO ()
+commandUsage command | command `elem` ["serve","proxy"] = putStrLn (quickstartUsage command)
 commandUsage command = putStrLn $ unlines
   [ "Usage: lantern " ++ command ++ " [FILE]"
   , "       lantern " ++ command ++ " --config FILE"

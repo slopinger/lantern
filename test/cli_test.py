@@ -21,7 +21,7 @@ class Tests(unittest.TestCase):
     def test_help_and_version_without_configuration(self):
         with tempfile.TemporaryDirectory(prefix='lantern-cli-') as directory:
             for arguments in [[], ['--help'], ['-h'], ['help'], ['help', 'run'],
-                              ['run', '--help'], ['check', '-h']]:
+                              ['run', '--help'], ['check', '-h'], ['serve', '--help'], ['help', 'proxy']]:
                 result = self.invoke(*arguments, directory=directory)
                 self.assertEqual((result.returncode, result.stderr), (0, ''), result)
                 self.assertIn('Usage:', result.stdout)
@@ -115,12 +115,14 @@ class Tests(unittest.TestCase):
     def test_run_options_serve_and_stop_cleanly(self):
         with tempfile.TemporaryDirectory(prefix='lantern-cli-') as temporary:
             directory = pathlib.Path(temporary)
-            for options in [['--config', '-site.conf'], ['--', '-site.conf']]:
+            (directory/'index.html').write_text('hello CLI')
+            for command, options in [('run', ['--config', '-site.conf']), ('run', ['--', '-site.conf']), ('serve', ['.'])]:
                 with socket.socket() as available:
                     available.bind(('127.0.0.1', 0))
                     port = available.getsockname()[1]
                 (directory/'-site.conf').write_text(f'listen 127.0.0.1:{port}\nsite localhost {{ respond "hello CLI" }}\n')
-                process = subprocess.Popen([BINARY, 'run', *options], cwd=directory,
+                arguments = [BINARY, command, *options] + (['--listen', f'127.0.0.1:{port}'] if command == 'serve' else [])
+                process = subprocess.Popen(arguments, cwd=directory,
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 try:
                     for _ in range(150):
@@ -133,7 +135,7 @@ class Tests(unittest.TestCase):
                         self.fail('CLI-selected server did not start')
                     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=3)
                     try:
-                        connection.request('GET', '/', headers={'Host': 'localhost'})
+                        connection.request('GET', '/', headers={'Host': 'arbitrary.example' if command == 'serve' else 'localhost'})
                         response = connection.getresponse()
                         self.assertEqual((response.status, response.read()), (200, b'hello CLI'))
                     finally:

@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE ScopedTypeVariables #-}
-module Lantern.Server (runServer, checkConfig) where
+module Lantern.Server (runServer, runConfigured, checkConfig) where
 import Control.Concurrent
 import Control.Concurrent.Async (withAsync, link)
 import Control.Exception
@@ -81,9 +81,17 @@ prepareProxyTrust c
   where secure site=case siteAction site of Proxy (HTTPS _) -> True; _ -> False
 
 runServer :: FilePath -> IO ()
-runServer file = do
+runServer file = runWith (loadConfig file)
+
+-- Quickstart reuses the same validation, listeners, ACME and lifecycle. Reload
+-- refreshes the fixed command-line configuration, without a temporary file.
+runConfigured :: Config -> IO ()
+runConfigured cfg = runWith (pure cfg)
+
+runWith :: IO Config -> IO ()
+runWith load = do
   hSetBuffering stderr LineBuffering
-  cfg <- loadConfig file
+  cfg <- load
   validateACMEURL cfg
   probeConfinement
   registry <- newMVar (False,M.empty)
@@ -132,7 +140,7 @@ runServer file = do
         _ <- installHandler sigINT (Catch stop) Nothing
         _ <- installHandler sigHUP (Catch queueReload) Nothing
         forM_ renewalQueue $ \q -> void (installHandler sigUSR1 (Catch (void (tryPutMVar q ()))) Nothing)
-        withAsync (forever (takeMVar reload >> reloadConfig file cfg state)) $ \worker -> do
+        withAsync (forever (takeMVar reload >> reloadConfig load cfg state)) $ \worker -> do
           link worker
           hPutStrLn stderr ("lantern listening on " ++ show (listen cfg))
           acceptSafely listener cfg state registry Nothing bodyBudget
@@ -173,10 +181,10 @@ acceptSafely listener cfg state registry challenges bodyBudget =
     stopped <- fst <$> readMVar registry
     unless stopped (throwIO e)
 
-reloadConfig :: FilePath -> Config -> IORef Snapshot -> IO ()
-reloadConfig file original state = do
+reloadConfig :: IO Config -> Config -> IORef Snapshot -> IO ()
+reloadConfig load original state = do
   result <- try $ do
-    cfg <- loadConfig file
+    cfg <- load
     unless (immutable cfg original) $ fail "listener/TLS mode/resource changes require a restart"
     case tlsMode cfg of
       Automatic{} -> do
@@ -289,7 +297,10 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
                 body <- deadline (bodySeconds limits) 408 (collectBody reader (reqFraming req) (bodyLimit limits))
                 Snapshot current _ roots cache <- readIORef state
                 host <- either (const (failHTTP 400 "invalid Host")) pure (requestHost hs)
-                site <- maybe (failHTTP 421 "unknown host") pure (find ((==host) . siteHost) (sites current))
+                let matched = case find ((==host) . siteHost) (sites current) of
+                      Just exact -> Just exact
+                      Nothing -> find ((=="*") . siteHost) (sites current)
+                site <- maybe (failHTTP 421 "unknown host") pure matched
                 case challenges of
                   Nothing -> let code=case siteAction site of Proxy{} -> 504; _ -> 408
                              in deadline (writeSeconds limits) code (dispatch current roots cache site req body peer transport isHead closeAfter headOut rawSend)

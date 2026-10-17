@@ -237,3 +237,15 @@ OpenSSL TLS unwrap after a complete keepalive response, plus idle stop/draining.
 Pinned HTTP response parsing rejects Transfer-Encoding on HTTP/1.0 status lines,
 including HEAD/304 and informational paths. The proxy fixture previously saw
 200/304; now these faulty upstream messages produce 502 before downstream commit.
+
+- Prioritize usable server features and Caddy-like setup; tests should support
+  those features rather than continually extending protocol edge-case coverage.
+- Quickstart commands: serve [DIRECTORY] and proxy UPSTREAM_URL, default loopback
+  HTTP without a Lanternfile. --domain plus --email enables automatic HTTPS on
+  [::]:443; --staging selects testing CA; --state-dir overrides XDG data state.
+  Shared configuration parsing/resolution and runWith avoid temporary files or
+  a second runtime. SIGHUP refreshes fixed quickstart settings. site * is a
+  fallback after exact host lookup; automatic HTTPS still requires DNS names.
+Quickstart automatic file serving rejects state inside the canonical document
+root before creating state or contacting the CA. Prefer separate production and
+staging directories. Explicit public bind/domain flags retain their usual effects.

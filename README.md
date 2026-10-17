@@ -3,10 +3,39 @@
 A small, experimental webserver in **Haskell**, with a Caddy-style configuration
 and independently implemented HTTP, TLS 1.3, and ACME. MIT licensed.
 
+Serve files or proxy an app without creating configuration:
+
 ```sh
 nix build
-./result/bin/lantern run examples/Lanternfile
+./result/bin/lantern serve ./public
+./result/bin/lantern proxy http://127.0.0.1:3000
 # open http://localhost:8080
+```
+
+Both commands bind only to loopback by default and accept any valid Host. Use
+`--listen 0.0.0.0:8080` to make the listener public. Hidden files and symlinks remain
+blocked. An HTTPS upstream is verified using the system trust store.
+
+For automatic HTTPS, point public DNS at this server, allow ports 80/443, then run:
+
+```sh
+lantern serve ./public --domain example.com --email you@example.com
+lantern proxy http://127.0.0.1:3000 --domain app.example.com --email you@example.com
+```
+
+These use Let's Encrypt production and bind `[::]:443` (IPv4 and IPv6 on Linux).
+Using ACME agrees to the CA's terms. Add `--staging` while trying issuance; staging
+certificates are not browser-trusted. State defaults to
+`$XDG_DATA_HOME/lantern/production` (or `~/.local/share/lantern/production`), with a
+separate `staging` subdirectory for testing. Override with `--state-dir DIRECTORY`.
+Keep state private and outside served roots. `--help` explains all options.
+Quickstart paths are relative to the current directory. Ctrl-C stops gracefully;
+SIGHUP refreshes the same command-line settings. Change arguments by restarting.
+
+For multiple hosts or more settings, use a Lanternfile:
+
+```sh
+lantern run examples/Lanternfile
 ```
 
 ```text
@@ -86,7 +115,9 @@ instead of `auto_https`. The current server profile needs an RSA certificate/key
 
 ## Routes and configuration
 
-Each exact hostname has one action. Add multiple `site` blocks for virtual hosts:
+Each hostname has one action. `site *` is an optional fallback after exact host
+matching for plain/manual TLS configurations; automatic HTTPS requires explicit
+DNS hostnames. Add multiple `site` blocks for virtual hosts:
 
 ```text
 site app.example.com {
@@ -287,3 +318,6 @@ automatically close writes. The server uses lantern-http readRequestMaybe to
 finish cleanly at a request boundary without emitting HTTP 400 after a peer
 close. Partial request EOF still fails. Tests cover plain TCP half-close and an
 OpenSSL TLS unwrap after a complete keepalive response, plus idle stop/draining.
+
+Quickstart automatic file serving rejects certificate state inside the served
+directory, before binding or issuance. Choose an external `--state-dir` if needed.
