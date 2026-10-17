@@ -203,7 +203,7 @@ Use `test/benchmark.py --conditional-only` to reproduce that workload selection.
 ## HTTP line fragmentation, 2026-10-16
 
 The independent HTTP library now avoids repeated copying and rescanning of a
-pending line. Its [parser experiment](https://git.freifick.net/slop/lantern-http/-/blob/main/docs/fragmentation.md)
+pending line. Its [parser experiment](https://github.com/slopinger/lantern-http/blob/main/docs/fragmentation.md)
 uses a verified 8135-byte request with one-byte, 128-byte and whole-buffer
 receives. Three alternating revision pairs show about 95% lower allocation and
 a large CPU reduction for single-byte fragmentation; the coalesced long-line
@@ -215,7 +215,7 @@ the line's byte limit; absolute deadlines/admission remain necessary.
 
 ## Request-target scan, 2026-10-16
 
-The [HTTP library's target-scan report](https://git.freifick.net/slop/lantern-http/-/blob/main/docs/target-scan.md)
+The [HTTP library's target-scan report](https://github.com/slopinger/lantern-http/blob/main/docs/target-scan.md)
 compares the indexed scan against `c9a0b57` using the unchanged long-request
 helper. Three alternating pairs of coalesced 8135-byte requests (10000 parses)
 used 3,292,484,144 -> 13,204,144 allocated bytes and median process CPU

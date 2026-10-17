@@ -1,5 +1,6 @@
 # Lantern
-- Experimental Haskell webserver, public MIT: https://git.freifick.net/slop/lantern.
+- Experimental Haskell webserver, public MIT: https://github.com/slopinger/lantern.
+  Development lives on GitHub only (`git push origin main`); no GitLab remote.
 - HTTP and TLS are independent pinned public projects lantern-http and lantern-tls;
   never replace them with a third-party protocol stack. Cryptographic primitives and
   client PKIX verification stay in Crypton. ACME is implemented here, without helpers.

@@ -327,10 +327,10 @@ matchers. This is not a complete Caddy replacement.
 
 ## Independent libraries
 
-- [lantern-http](https://git.freifick.net/slop/lantern-http): incremental wire parsing,
+- [lantern-http](https://github.com/slopinger/lantern-http): incremental wire parsing,
   framing, chunk decoding, response serialization, and hop-field filtering;
   runtime dependencies are base, bytestring and time.
-- [lantern-tls](https://git.freifick.net/slop/lantern-tls): own client/server TLS 1.3
+- [lantern-tls](https://github.com/slopinger/lantern-tls): own client/server TLS 1.3
   state/record/key-schedule code, PEM/DER server credentials and CSRs; Crypton
   provides primitives and client PKIX verification.
 

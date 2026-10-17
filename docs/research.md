@@ -69,7 +69,7 @@ an existing HTTP/TLS server or ACME executable.
 
 ## HTTP, proxying and resource controls
 
-The protocol library's [RFC 9112 research](https://git.freifick.net/slop/lantern-http/-/blob/main/docs/research.md)
+The protocol library's [RFC 9112 research](https://github.com/slopinger/lantern-http/blob/main/docs/research.md)
 explains strict framing and connection poisoning. A proxy must treat the upstream
 as another untrusted parser boundary: strip hop fields, replace forwarding identity,
 regenerate request lengths, validate response framing before committing headers,
