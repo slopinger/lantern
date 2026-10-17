@@ -2,9 +2,9 @@
   description = "Lantern: an experimental Haskell webserver with independent HTTP, TLS and ACME";
   inputs = {
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    http.url = "git+https://git.freifick.net/slop/lantern-http.git?ref=main";
+    http.url = "git+https://github.com/slopinger/lantern-http.git?ref=main";
     http.inputs.nixpkgs.follows = "nixpkgs";
-    tls.url = "git+https://git.freifick.net/slop/lantern-tls.git?ref=main";
+    tls.url = "git+https://github.com/slopinger/lantern-tls.git?ref=main";
     tls.inputs.nixpkgs.follows = "nixpkgs";
   };
   outputs = { self, nixpkgs, http, tls }: let

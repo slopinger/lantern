@@ -13,12 +13,12 @@
         "rev": "92ad2059db64b92773936daf56e596ae99609fd3",
         "revCount": 7,
         "type": "git",
-        "url": "https://git.freifick.net/slop/lantern-http.git"
+        "url": "https://github.com/slopinger/lantern-http.git"
       },
       "original": {
         "ref": "main",
         "type": "git",
-        "url": "https://git.freifick.net/slop/lantern-http.git"
+        "url": "https://github.com/slopinger/lantern-http.git"
       }
     },
     "nixpkgs": {
@@ -57,12 +57,12 @@
         "rev": "9490eb731be5cbcf2524370285bc90e7bb5eca66",
         "revCount": 8,
         "type": "git",
-        "url": "https://git.freifick.net/slop/lantern-tls.git"
+        "url": "https://github.com/slopinger/lantern-tls.git"
       },
       "original": {
         "ref": "main",
         "type": "git",
-        "url": "https://git.freifick.net/slop/lantern-tls.git"
+        "url": "https://github.com/slopinger/lantern-tls.git"
       }
     }
   },
