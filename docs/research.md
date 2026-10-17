@@ -337,3 +337,14 @@ The idle TLS shutdown ordering follows [RFC 8446 section 6.1](https://www.rfc-ed
 transport EOF without a prior authenticated closure alert cannot establish that
 all sent data arrived. The caller still owns the transport and deadlines; the
 library's close operation sends the alert without waiting for peer shutdown.
+
+## Independent closure updates
+
+TLS 9490eb7 separates authenticated peer read EOF from local write closure,
+following RFC 8446 section 6.1. The previous state discarded peer data after local
+close; a deterministic real-handshake fixture reproduced that failure. The new
+fixture also covers repeated close, truncated input and failed alert poisoning.
+HTTP 790d421 adds readRequestMaybe for clean connection EOF before any next
+request byte, retaining strict errors for partial requests/backend failures.
+The server adopts it so a TLS peer ending its request stream receives an
+explicit TLS closure reply without an invented HTTP error response.

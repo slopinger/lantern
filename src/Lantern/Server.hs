@@ -255,52 +255,55 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
                 Just async -> throwIO async
                 Nothing -> errorOut 500 >> pure False
         continue <- (do
-          req <- deadline (headerSeconds limits) 408 (readRequest reader)
-          writeIORef headRequest (reqMethod req == "HEAD")
-          -- Serialize request admission with stop, including existing sockets.
-          -- A request admitted before stop may finish; later ones never dispatch.
-          allowed <- modifyMVar registry $ \(stopped,clients) ->
-            if stopped then pure ((stopped,clients),False) else
-              case M.lookup self clients of
-                Nothing -> pure ((stopped,clients),False)
-                Just (socket',_,end) -> pure ((stopped,M.insert self (socket',True,end) clients),True)
-          unless allowed $ failHTTP 503 "server draining"
-          let hs = reqHeaders req
-              closeAfter = connectionClose req || count == 99
-              isHead = reqMethod req == "HEAD"
-          when (header "upgrade" hs /= Nothing || reqMethod req == "CONNECT" || reqMethod req == "TRACE") $
-            failHTTP 501 "method or upgrade unsupported"
-          case reqFraming req of
-            Fixed n | n > bodyLimit limits -> failHTTP 413 "body too large"
-            _ -> pure ()
-          let reservation=case reqFraming req of Fixed n -> n; Chunked -> bodyLimit limits; _ -> 0
-          bracket (reserveBody bodyBudget reservation) (releaseBody bodyBudget) $ \_ -> do
-            case values "expect" hs of
-              [] -> pure ()
-              [v] | lower v == "100-continue" && reqVersion req == "HTTP/1.1" -> do
-                -- A failed partial interim write also forbids a second response.
-                writeIORef started True
-                send "HTTP/1.1 100 Continue\r\n\r\n"
-                writeIORef started False
-              _ -> failHTTP 417 "unsupported expectation"
-            body <- deadline (bodySeconds limits) 408 (collectBody reader (reqFraming req) (bodyLimit limits))
-            Snapshot current _ roots cache <- readIORef state
-            host <- either (const (failHTTP 400 "invalid Host")) pure (requestHost hs)
-            site <- maybe (failHTTP 421 "unknown host") pure (find ((==host) . siteHost) (sites current))
-            case challenges of
-              Nothing -> let code=case siteAction site of Proxy{} -> 504; _ -> 408
-                         in deadline (writeSeconds limits) code (dispatch current roots cache site req body peer transport isHead closeAfter headOut rawSend)
-              Just table -> do
-                unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "HTTP-01 requires GET or HEAD"
-                answer <- ACME.challengeResponse table host (reqTarget req)
-                deadline (writeSeconds limits) 408 $ case answer of
-                  Just token -> simple headOut rawSend isHead closeAfter 200 [] token
-                  Nothing | "/.well-known/acme-challenge/" `B.isPrefixOf` reqTarget req -> failHTTP 404 "unknown ACME token"
-                  Nothing -> do
-                    let port=endpointPort (listen current)
-                        authority=siteHost site <> if port == 443 then "" else ":" <> C.pack (show port)
-                    simple headOut rawSend isHead closeAfter 308 [("location","https://"<>authority<>reqTarget req)] "redirecting\n"
-            pure (not closeAfter)
+          next <- deadline (headerSeconds limits) 408 (readRequestMaybe reader)
+          case next of
+            Nothing -> pure False
+            Just req -> do
+              writeIORef headRequest (reqMethod req == "HEAD")
+              -- Serialize request admission with stop, including existing sockets.
+              -- A request admitted before stop may finish; later ones never dispatch.
+              allowed <- modifyMVar registry $ \(stopped,clients) ->
+                if stopped then pure ((stopped,clients),False) else
+                  case M.lookup self clients of
+                    Nothing -> pure ((stopped,clients),False)
+                    Just (socket',_,end) -> pure ((stopped,M.insert self (socket',True,end) clients),True)
+              unless allowed $ failHTTP 503 "server draining"
+              let hs = reqHeaders req
+                  closeAfter = connectionClose req || count == 99
+                  isHead = reqMethod req == "HEAD"
+              when (header "upgrade" hs /= Nothing || reqMethod req == "CONNECT" || reqMethod req == "TRACE") $
+                failHTTP 501 "method or upgrade unsupported"
+              case reqFraming req of
+                Fixed n | n > bodyLimit limits -> failHTTP 413 "body too large"
+                _ -> pure ()
+              let reservation=case reqFraming req of Fixed n -> n; Chunked -> bodyLimit limits; _ -> 0
+              bracket (reserveBody bodyBudget reservation) (releaseBody bodyBudget) $ \_ -> do
+                case values "expect" hs of
+                  [] -> pure ()
+                  [v] | lower v == "100-continue" && reqVersion req == "HTTP/1.1" -> do
+                    -- A failed partial interim write also forbids a second response.
+                    writeIORef started True
+                    send "HTTP/1.1 100 Continue\r\n\r\n"
+                    writeIORef started False
+                  _ -> failHTTP 417 "unsupported expectation"
+                body <- deadline (bodySeconds limits) 408 (collectBody reader (reqFraming req) (bodyLimit limits))
+                Snapshot current _ roots cache <- readIORef state
+                host <- either (const (failHTTP 400 "invalid Host")) pure (requestHost hs)
+                site <- maybe (failHTTP 421 "unknown host") pure (find ((==host) . siteHost) (sites current))
+                case challenges of
+                  Nothing -> let code=case siteAction site of Proxy{} -> 504; _ -> 408
+                             in deadline (writeSeconds limits) code (dispatch current roots cache site req body peer transport isHead closeAfter headOut rawSend)
+                  Just table -> do
+                    unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "HTTP-01 requires GET or HEAD"
+                    answer <- ACME.challengeResponse table host (reqTarget req)
+                    deadline (writeSeconds limits) 408 $ case answer of
+                      Just token -> simple headOut rawSend isHead closeAfter 200 [] token
+                      Nothing | "/.well-known/acme-challenge/" `B.isPrefixOf` reqTarget req -> failHTTP 404 "unknown ACME token"
+                      Nothing -> do
+                        let port=endpointPort (listen current)
+                            authority=siteHost site <> if port == 443 then "" else ":" <> C.pack (show port)
+                        simple headOut rawSend isHead closeAfter 308 [("location","https://"<>authority<>reqTarget req)] "redirecting\n"
+                pure (not closeAfter)
           ) `catch` handleError
         when continue $ do
           again <- modifyMVar registry $ \(stopped,clients) ->

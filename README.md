@@ -280,3 +280,10 @@ a transport close directly. Closers run concurrently, with a one-second TLS
 finish deadline, so slow idle peers do not serialize the grace period. A real
 Python/OpenSSL peer with ragged EOF suppression disabled verifies authenticated
 TLS closure, alongside the plain idle and active/pipelined drain tests.
+
+The pinned TLS library tracks read and write closure separately: finishing a
+transport closes its write direction once; authenticated peer EOF does not
+automatically close writes. The server uses lantern-http readRequestMaybe to
+finish cleanly at a request boundary without emitting HTTP 400 after a peer
+close. Partial request EOF still fails. Tests cover plain TCP half-close and an
+OpenSSL TLS unwrap after a complete keepalive response, plus idle stop/draining.

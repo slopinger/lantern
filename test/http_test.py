@@ -283,6 +283,15 @@ site redirect.local {{ redirect https://example.com/fixed }}
         overflow = b'GET /' + b'a'*8179 + b' HTTP/1.1\r\nHost: text.local\r\nConnection: close\r\n\r\n'
         self.assertEqual(self.server.raw(overflow)[0], 431)
 
+    def test_clean_peer_eof_between_requests(self):
+        with socket.create_connection(('127.0.0.1', self.port), timeout=4) as peer:
+            peer.sendall(b'GET / HTTP/1.1\r\nHost: text.local\r\n\r\n')
+            response = http.client.HTTPResponse(peer); response.begin()
+            self.assertEqual((response.status, response.read()), (200, b'hello text'))
+            response.close()
+            peer.shutdown(socket.SHUT_WR)
+            self.assertEqual(peer.recv(1), b'', 'clean request-boundary EOF generated a response')
+
     def test_shutdown_closes_idle_keepalive_without_waiting_for_grace(self):
         self.server.close()
         config = self.config.replace('header_timeout 1', 'header_timeout 30')
@@ -453,6 +462,15 @@ site redirect.local {{ redirect https://example.com/fixed }}
         c=http.client.HTTPSConnection('localhost',self.port,context=p256,timeout=4)
         c.request('GET','/')
         r=c.getresponse();self.assertEqual((r.status,r.read()),(200,b'TLS works'));c.close()
+        # An idle peer's authenticated write closure must receive only a TLS
+        # close reply, rather than a fabricated HTTP 400 after the last response.
+        with socket.create_connection(('127.0.0.1', self.port), timeout=4) as raw:
+            with ctx.wrap_socket(raw, server_hostname='localhost') as peer:
+                peer.sendall(b'GET / HTTP/1.1\r\nHost: localhost\r\n\r\n')
+                response = http.client.HTTPResponse(peer); response.begin()
+                self.assertEqual((response.status, response.read()), (200, b'TLS works'))
+                response.close()
+                peer.unwrap().close()
         original=cert.read_bytes()
         cert.write_text('invalid PEM')
         self.server.proc.send_signal(signal.SIGHUP)
