@@ -31,6 +31,7 @@ import qualified Lantern.TLS.Crypto as Crypto
 import Lantern.Transport
 import Lantern.Client (parseURL)
 import qualified Lantern.TLS as TLS
+import qualified Lantern.AccessLog as Access
 import qualified Lantern.ACME as ACME
 
 -- One immutable snapshot per request. No routing lookup races during reload.
@@ -89,7 +90,7 @@ runConfigured :: Config -> IO ()
 runConfigured cfg = runWith (pure cfg)
 
 runWith :: IO Config -> IO ()
-runWith load = do
+runWith load = Access.withLogger $ \logger -> do
   hSetBuffering stderr LineBuffering
   cfg <- load
   validateACMEURL cfg
@@ -104,7 +105,7 @@ runWith load = do
       challenges <- ACME.newChallenges
       let httpEndpoint=(listen cfg) {endpointPort=acmeHTTPPort cfg}
       bracket (openListener httpEndpoint) close $ \httpListener ->
-        withAsync (acceptSafely httpListener cfg state registry (Just challenges) bodyBudget) $ \httpWorker -> do
+        withAsync (acceptSafely logger httpListener cfg state registry (Just challenges) bodyBudget) $ \httpWorker -> do
           link httpWorker
           cached <- ACME.cachedCredentials cfg
           creds <- case cached of
@@ -116,12 +117,12 @@ runWith load = do
           renewNow <- newEmptyMVar
           withAsync (renewCertificates cfg challenges state renewNow) $ \renewWorker -> do
             link renewWorker
-            runCore cfg state registry bodyBudget [httpListener] (Just renewNow)
+            runCore logger cfg state registry bodyBudget [httpListener] (Just renewNow)
     _ -> do
       prepare cfg >>= atomicWriteIORef state
-      runCore cfg state registry bodyBudget [] Nothing
+      runCore logger cfg state registry bodyBudget [] Nothing
   where
-    runCore cfg state registry bodyBudget additionalListeners renewalQueue = do
+    runCore logger cfg state registry bodyBudget additionalListeners renewalQueue = do
       reload <- newEmptyMVar
       bracket (openListener (listen cfg)) close $ \listener -> do
         let stop = do
@@ -143,7 +144,7 @@ runWith load = do
         withAsync (forever (takeMVar reload >> reloadConfig load cfg state)) $ \worker -> do
           link worker
           hPutStrLn stderr ("lantern listening on " ++ show (listen cfg))
-          acceptSafely listener cfg state registry Nothing bodyBudget
+          acceptSafely logger listener cfg state registry Nothing bodyBudget
           _ <- timeout 10000000 (waitEmpty registry)
           remaining <- snd <$> readMVar registry
           forM_ (M.keys remaining) killThread
@@ -175,9 +176,9 @@ renewCertificates cfg challenges state queue = loop False
       forced <- timeout (delay*1000000) (takeMVar queue)
       loop (case forced of Just () -> True; Nothing -> False)
 
-acceptSafely :: Socket -> Config -> IORef Snapshot -> Registry -> Maybe ACME.Challenges -> IORef Integer -> IO ()
-acceptSafely listener cfg state registry challenges bodyBudget =
-  acceptLoop listener cfg state registry challenges bodyBudget `catch` \(e :: IOException) -> do
+acceptSafely :: Access.Logger -> Socket -> Config -> IORef Snapshot -> Registry -> Maybe ACME.Challenges -> IORef Integer -> IO ()
+acceptSafely logger listener cfg state registry challenges bodyBudget =
+  acceptLoop logger listener cfg state registry challenges bodyBudget `catch` \(e :: IOException) -> do
     stopped <- fst <$> readMVar registry
     unless stopped (throwIO e)
 
@@ -202,8 +203,8 @@ reloadConfig load original state = do
       Nothing -> hPutStrLn stderr ("reload rejected: " ++ displayException e)
     Right () -> hPutStrLn stderr "configuration reloaded"
 
-acceptLoop :: Socket -> Config -> IORef Snapshot -> Registry -> Maybe ACME.Challenges -> IORef Integer -> IO ()
-acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ \restore -> do
+acceptLoop :: Access.Logger -> Socket -> Config -> IORef Snapshot -> Registry -> Maybe ACME.Challenges -> IORef Integer -> IO ()
+acceptLoop logger listener cfg state registry challenges bodyBudget = forever $ mask $ \restore -> do
   (socket',peer) <- restore (accept listener)
   (do
     admitted <- modifyMVarMasked registry $ \(stopped,clients) ->
@@ -226,7 +227,7 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
                   (do
                     ready <- modifyMVar registry $ \(stopped,clients) ->
                       pure ((stopped,M.adjust (\(s,busy,_) -> (s,busy,Just (finish transport))) self clients),not stopped)
-                    when ready (serveConnection cfg state registry peer transport challenges bodyBudget)) `finally` finish transport
+                    when ready (serveConnection logger cfg state registry peer transport challenges bodyBudget)) `finally` finish transport
             (unmask task `catch` quietConnection) `finally` cleanup
           pure ((stopped,M.insert tid (socket',False,Nothing) clients),True)
     unless admitted (close socket')) `onException` close socket'
@@ -235,14 +236,18 @@ acceptLoop listener cfg state registry challenges bodyBudget = forever $ mask $ 
       Just async -> throwIO async
       Nothing -> pure () -- No request paths, credentials, or client data in default logs.
 
-serveConnection :: Config -> IORef Snapshot -> Registry -> SockAddr -> Transport -> Maybe ACME.Challenges -> IORef Integer -> IO ()
-serveConnection limits state registry peer transport challenges bodyBudget = do
+serveConnection :: Access.Logger -> Config -> IORef Snapshot -> Registry -> SockAddr -> Transport -> Maybe ACME.Challenges -> IORef Integer -> IO ()
+serveConnection logger limits state registry peer transport challenges bodyBudget = do
   reader <- newReader (receive transport)
   self <- myThreadId
   let loop count = when (count < 100) $ do
+        Snapshot logging _ _ _ <- readIORef state
+        event <- if accessLog logging then Just <$> Access.newEvent logger (peerIP peer) else pure Nothing
         started <- newIORef False
         headRequest <- newIORef False
-        let rawSend = transmit transport
+        let rawSend bytes = do
+              transmit transport bytes
+              forM_ event (\entry -> Access.wrote entry (B.length bytes))
             send = deadline (writeSeconds limits) 408 . rawSend
             -- Every use is inside a whole-response deadline, including errors
             -- and HTTP-01. Avoid a timer registration for each streamed chunk.
@@ -251,22 +256,26 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
               let fields = if stopped then ("connection","close") : filter ((/= "connection") . fst) hs else hs
               writeIORef started True
               writeHead rawSend status fields
+              forM_ event (\entry -> Access.responded entry status)
             errorOut code = do
               sent <- readIORef started
               isHead <- readIORef headRequest
               let extra=if code == 405 then [("allow","GET, HEAD")] else []
-              unless sent $ deadline (writeSeconds limits) 408 $
-                simple headOut rawSend isHead True code extra "request failed\n"
+              unless sent $ do
+                deadline (writeSeconds limits) 408 $
+                  simple headOut rawSend isHead True code extra "request failed\n"
+                forM_ event Access.completed
             handleError (e :: SomeException) = case fromException e of
               Just (ProtocolError code _) -> errorOut code >> pure False
               Nothing -> case fromException e :: Maybe AsyncException of
                 Just async -> throwIO async
                 Nothing -> errorOut 500 >> pure False
-        continue <- (do
+        continue <- ((do
           next <- deadline (headerSeconds limits) 408 (readRequestMaybe reader)
           case next of
             Nothing -> pure False
             Just req -> do
+              forM_ event (\entry -> Access.request entry req (either (const Nothing) Just (requestHost (reqHeaders req))))
               writeIORef headRequest (reqMethod req == "HEAD")
               -- Serialize request admission with stop, including existing sockets.
               -- A request admitted before stop may finish; later ones never dispatch.
@@ -316,8 +325,9 @@ serveConnection limits state registry peer transport challenges bodyBudget = do
                         let port=endpointPort (listen current)
                             authority=siteHost site <> if port == 443 then "" else ":" <> C.pack (show port)
                         simple headOut rawSend isHead closeAfter 308 [("location","https://"<>authority<>reqTarget req)] "redirecting\n"
+                forM_ event Access.completed
                 pure (not closeAfter)
-          ) `catch` handleError
+          ) `catch` handleError) `finally` forM_ event Access.finish
         when continue $ do
           again <- modifyMVar registry $ \(stopped,clients) ->
             pure ((stopped,M.adjust (\(socket',_,end) -> (socket',False,end)) self clients),not stopped)

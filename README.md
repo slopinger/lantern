@@ -64,6 +64,37 @@ responses committed during drain advertise `Connection: close`, and buffered
 following requests are not dispatched. Idle/header/handshake sockets close promptly on stop. Requests admitted before
 stop retain the grace period; late clients may observe EOF/reset instead of 503.
 
+## Access logs
+
+Enable structured request logs in a Lanternfile with `access_log on`, or use
+`lantern serve ./public --access-log` / `lantern proxy URL --access-log`.
+JSON lines go to stdout; startup/reload diagnostics stay on stderr:
+
+```sh
+lantern run >access.jsonl
+jq 'select(.status >= 500)' access.jsonl
+```
+
+Each event includes UTC time, peer IP, method, validated host, original public
+path, final status, response bytes, duration in microseconds, and `complete`.
+Query strings, headers and bodies are omitted; paths are capped at 2048 bytes.
+Treat peer IPs and paths as private operational data. `complete: false` can flag
+an interrupted response even when a 200 header was sent. `status: null` means
+no final response head completed. Malformed headers may have null request fields;
+TLS failures happen before HTTP logging. Clean idle EOF produces no request event.
+
+Response bytes count completed HTTP plaintext writes, including headers/chunk
+framing, excluding TLS overhead or any partial failed write. Valid-request timing
+starts after header parsing; malformed-request timing includes the header wait.
+Logging is off by default. The setting reloads with SIGHUP and is captured when a
+worker begins reading the next request. Under systemd the events go to the journal.
+
+A bounded 256-event queue keeps request threads independent of log output. Full
+queues drop new events; a broken stdout disables output, and shutdown allows up
+to one second to drain. This is diagnostic logging, not a lossless audit ledger.
+Store redirected logs outside served roots with private file permissions.
+Rotate/manage them using your service supervisor.
+
 ## Automatic HTTPS
 
 ```text
@@ -196,6 +227,7 @@ support HTTP/1.1 keep-alive and pipelining. HTTP/1.0 has a strict limited profil
 
 | Directive | Default / meaning |
 | --- | --- |
+| `access_log on/off` | Off; JSON request events on stdout, reloadable |
 | `listen ADDRESS:PORT` | `127.0.0.1:8080`; bracket IPv6 addresses |
 | `header_timeout SECONDS` | 10; absolute complete-header deadline, max 300 |
 | `body_timeout SECONDS` | 30; absolute complete-request-body deadline, max 3600 |

@@ -29,7 +29,7 @@ runQuickstart command args = do
     pure ("auto_https " ++ quoted email ++ " " ++ quoted state ++ "\n" ++
           if staging then "acme_ca https://acme-staging-v02.api.letsencrypt.org/directory\n" else "")
   cwd <- getCurrentDirectory
-  let text = "listen " ++ quoted listener ++ "\n" ++ tls ++ "site " ++ quoted domain ++ " { " ++ action ++ " }\n"
+  let text = (if get "--access-log" /= Nothing then "access_log on\n" else "") ++ "listen " ++ quoted listener ++ "\n" ++ tls ++ "site " ++ quoted domain ++ " { " ++ action ++ " }\n"
   parsed <- either fail pure (parseConfig "command line" text)
   config <- resolveConfig (cwd </> "Lanternfile") parsed
   case (tlsMode config,sites config) of
@@ -48,7 +48,7 @@ runQuickstart command args = do
       (Nothing,[value]) -> Right (Just value,options)
       _ -> Left "expected one directory or upstream after --"
     arguments position options (flag:rest)
-      | flag == "--staging" = option position options flag "" rest
+      | flag `elem` ["--staging","--access-log"] = option position options flag "" rest
       | flag `elem` ["--listen","--domain","--email","--state-dir"] = case rest of
           value:remaining | not ("--" `isPrefixOf` value) -> option position options flag value remaining
           _ -> Left (flag ++ " requires a value")
@@ -71,6 +71,7 @@ quickstartUsage command = unlines
   , if command == "serve" then "Serve a directory (default: current directory), without a Lanternfile."
       else "Reverse proxy to an HTTP or authenticated HTTPS upstream, without a Lanternfile."
   , "  --listen ADDRESS:PORT  Bind address (default: 127.0.0.1:8080, or [::]:443 with --domain)"
+  , "  --access-log           Emit JSON access events to stdout (queries omitted)"
   , "  --domain HOST          Enable automatic HTTPS for a public DNS hostname"
   , "  --email ADDRESS        ACME contact email (required with --domain)"
   , "  --state-dir DIRECTORY  Certificate state (default: XDG data/lantern/production or staging)"

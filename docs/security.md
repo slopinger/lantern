@@ -272,3 +272,8 @@ Static actions retain confined path decoding, and proxy actions receive the sele
 retained or prefix-stripped target. Most specific matching action wins; absent default/match is 404.
 Shared header restrictions apply to every leaf, and proxy trust/root resolution
 traverse handler actions during configuration preparation.
+
+Access logging is opt-in and may include private IPs/paths. It deliberately drops
+query strings, headers and bodies. Output is bounded/best effort, so it must not
+be treated as a lossless security audit trail. HTTP response logging starts after
+TLS establishment; TLS failures are outside its scope.

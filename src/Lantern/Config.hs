@@ -30,12 +30,12 @@ data Config = Config
   { listen :: Endpoint, tlsMode :: TLSMode, sites :: [Site]
   , maxConnections :: Int, headerSeconds :: Int, bodySeconds :: Int
   , writeSeconds :: Int, bodyLimit :: Integer
-  , acmeCA :: B.ByteString, acmeHTTPPort :: Int, acmeTrust :: Maybe FilePath, proxyTrust :: Maybe FilePath
+  , acmeCA :: B.ByteString, acmeHTTPPort :: Int, acmeTrust :: Maybe FilePath, proxyTrust :: Maybe FilePath, accessLog :: Bool
   } deriving (Eq, Show)
 
 data Entry = Listen String | TLS String String | Auto String String
   | Connections Int | HeaderTime Int | BodyTime Int | WriteTime Int | BodyLimit Int
-  | CA String | HTTPPort Int | Trust String | ProxyTrust String | Virtual Site deriving Show
+  | AccessLog Bool | CA String | HTTPPort Int | Trust String | ProxyTrust String | Virtual Site deriving Show
 
 spaceP :: Parser ()
 spaceP = skipMany (skipMany1 (oneOf " \t\r\n") <|> (char '#' *> skipMany (noneOf "\n")))
@@ -54,6 +54,10 @@ entry :: Parser Entry
 entry = do
   key <- word
   case key of
+    "access_log" -> do
+      enabled <- word
+      case enabled of "on" -> pure (AccessLog True); "off" -> pure (AccessLog False)
+                      _ -> fail "access_log must be on or off"
     "listen" -> Listen <$> word
     "tls" -> TLS <$> word <*> word
     "auto_https" -> Auto <$> word <*> word
@@ -188,7 +192,7 @@ hostName raw = do
 parseConfig :: FilePath -> String -> Either String Config
 parseConfig name input = do
   entries <- either (Left . show) Right (parse (spaceP *> many entry <* eof) name input)
-  let initial = Config (Endpoint "127.0.0.1" 8080) Plain [] 256 10 30 30 1048576 "https://acme-v02.api.letsencrypt.org/directory" 80 Nothing Nothing
+  let initial = Config (Endpoint "127.0.0.1" 8080) Plain [] 256 10 30 30 1048576 "https://acme-v02.api.letsencrypt.org/directory" 80 Nothing Nothing False
   config <- foldEntries initial [] entries
   when (null (sites config)) $ Left "at least one site is required"
   when (length (sites config) > 100) $ Left "at most 100 sites"
@@ -211,12 +215,13 @@ parseConfig name input = do
     foldEntries c _ [] = Right c
     foldEntries c seen (e:rest) = do
       let tag = case e of
-            Listen{} -> "listen"; TLS{} -> "tls"; Auto{} -> "tls"
+            AccessLog{} -> "access_log"; Listen{} -> "listen"; TLS{} -> "tls"; Auto{} -> "tls"
             Connections{} -> "max_connections"; HeaderTime{} -> "header_timeout"
             BodyTime{} -> "body_timeout"; WriteTime{} -> "write_timeout"
             BodyLimit{} -> "body_limit"; CA{} -> "acme_ca"; HTTPPort{} -> "acme_http_port"; Trust{} -> "acme_ca_bundle"; ProxyTrust{} -> "proxy_ca_bundle"; Virtual{} -> "site"
       when (tag /= "site" && tag `elem` seen) $ Left ("duplicate directive: " ++ tag)
       c' <- case e of
+        AccessLog enabled -> Right c {accessLog=enabled}
         Listen s -> (\ep -> c {listen=ep}) <$> parseEndpoint s
         TLS cert key -> Right c {tlsMode=Manual cert key}
         Auto email dir -> Right c {tlsMode=Automatic email dir}
@@ -298,5 +303,5 @@ resolveConfig source cfg = do
 
 -- Listener and resource limits stay fixed; reload changes immutable route snapshots.
 immutable :: Config -> Config -> Bool
-immutable a b = a {sites=[]} == b {sites=[]} &&
+immutable a b = a {sites=[],accessLog=False} == b {sites=[],accessLog=False} &&
   case tlsMode a of Automatic{} -> map siteHost (sites a) == map siteHost (sites b); _ -> True

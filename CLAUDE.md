@@ -273,3 +273,13 @@ staging directories. Explicit public bind/domain flags retain their usual effect
 For source-only routing changes, verify nix build and the integration flake
 check; run the booted service check when packaging/module/host integration
 changes. Keep new verification focused on shipped user-visible behavior.
+
+- Opt-in access logging: access_log on/off (default off), reloadable; quickstart
+  --access-log. AccessLog.hs owns JSON-lines stdout output, 256-event bounded
+  nonblocking queue and one-second shutdown drain; broken stdout disables output.
+  Captures peer, method, validated host, original public path (query removed, max
+  2048 bytes), final committed status, completed HTTP writes, monotonic duration
+  and response completeness. No request headers/bodies/queries. Malformed headers
+  can have null metadata; clean idle EOF omitted. Captured before header read;
+  valid-request duration resets after parsing. Default logging allocates no events.
+  Existing CLI quickstart check validates one JSON event without its query secret.

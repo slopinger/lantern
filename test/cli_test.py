@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """User-facing CLI checks, including read-only validation and exit behavior."""
 import http.client
+import json
 import signal
 import time
 import os
@@ -102,7 +103,7 @@ class Tests(unittest.TestCase):
                     available.bind(('127.0.0.1', 0))
                     port = available.getsockname()[1]
                 (directory/'-site.conf').write_text(f'listen 127.0.0.1:{port}\nsite localhost {{ respond "hello CLI" }}\n')
-                arguments = [BINARY, command, *options] + (['--listen', f'127.0.0.1:{port}'] if command == 'serve' else [])
+                arguments = [BINARY, command, *options] + (['--listen', f'127.0.0.1:{port}', '--access-log'] if command == 'serve' else [])
                 process = subprocess.Popen(arguments, cwd=directory,
                                            stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 try:
@@ -116,14 +117,22 @@ class Tests(unittest.TestCase):
                         self.fail('CLI-selected server did not start')
                     connection = http.client.HTTPConnection('127.0.0.1', port, timeout=3)
                     try:
-                        connection.request('GET', '/', headers={'Host': 'arbitrary.example' if command == 'serve' else 'localhost'})
+                        connection.request('GET', '/?token=keep-private', headers={'Host': 'arbitrary.example' if command == 'serve' else 'localhost'})
                         response = connection.getresponse()
                         self.assertEqual((response.status, response.read()), (200, b'hello CLI'))
                     finally:
                         connection.close()
                     process.send_signal(signal.SIGTERM)
-                    _, error = process.communicate(timeout=12)
+                    output, error = process.communicate(timeout=12)
                     self.assertEqual(process.returncode, 0, error)
+                    if command == 'serve':
+                        events = [json.loads(line) for line in output.splitlines()]
+                        self.assertEqual(len(events), 1)
+                        self.assertEqual((events[0]['event'], events[0]['method'], events[0]['path'],
+                                          events[0]['status'], events[0]['complete']),
+                                         ('http_access', 'GET', '/', 200, True))
+                        self.assertGreater(events[0]['response_bytes'], len(b'hello CLI'))
+                        self.assertNotIn(b'keep-private', output)
                 finally:
                     if process.poll() is None:
                         process.kill()
