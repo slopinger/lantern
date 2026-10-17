@@ -277,3 +277,9 @@ Access logging is opt-in and may include private IPs/paths. It deliberately drop
 query strings, headers and bodies. Output is bounded/best effort, so it must not
 be treated as a lossless security audit trail. HTTP response logging starts after
 TLS establishment; TLS failures are outside its scope.
+
+Precompressed sidecars use the same confined opener as originals, and never
+replace an absent original. An optional open cannot suppress callback failures
+or retry after output has started. Publishers own sidecar integrity/equivalence;
+mtime checking only filters older files. No untrusted decompression or runtime
+compression is performed. Encoded variants have separate validators and Vary.

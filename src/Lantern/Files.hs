@@ -1,6 +1,6 @@
 {-# LANGUAGE ForeignFunctionInterface #-}
 {-# LANGUAGE OverloadedStrings #-}
-module Lantern.Files (RegularFile, readFileChunk, seekFile, withFileBelow, pathFromTarget, directoryRedirect, probeConfinement) where
+module Lantern.Files (RegularFile, readFileChunk, seekFile, withFileBelow, withOptionalFileBelow, pathFromTarget, directoryRedirect, probeConfinement) where
 import Control.Exception (bracket, onException)
 import Control.Monad (unless)
 import qualified Data.ByteString as B
@@ -71,7 +71,15 @@ seekFile (RegularFile fd) offset = do
 -- Nothing means the confined open observed a directory, not a regular file.
 -- The shim closes directory descriptors; Haskell brackets every regular FD.
 withFileBelow :: FilePath -> FilePath -> (RegularFile -> FileStatus -> IO a) -> IO (Maybe a)
-withFileBelow root relative action = bracket acquire (maybe (pure ()) (\(RegularFile fd,_) -> closeFd fd)) $
+withFileBelow = withFileBelowMode False
+
+-- Optional sidecars may be absent, directories or forbidden paths. Only open
+-- failures become Nothing; callback failures must propagate without retries.
+withOptionalFileBelow :: FilePath -> FilePath -> (RegularFile -> FileStatus -> IO a) -> IO (Maybe a)
+withOptionalFileBelow = withFileBelowMode True
+
+withFileBelowMode :: Bool -> FilePath -> FilePath -> (RegularFile -> FileStatus -> IO a) -> IO (Maybe a)
+withFileBelowMode optional root relative action = bracket acquire (maybe (pure ()) (\(RegularFile fd,_) -> closeFd fd)) $
   maybe (pure Nothing) (\(h,status) -> Just <$> action h status)
   where
     acquire = withUTF8Path root $ \r -> withUTF8Path relative $ \p -> do
@@ -85,7 +93,7 @@ withFileBelow root relative action = bracket acquire (maybe (pure ()) (\(Regular
       if err==eISDIR then pure Nothing
         else if err == eMFILE || err == eNFILE then failHTTP 503 "file descriptor limit"
         else if err == eNOSYS then throwErrno "openat2 unavailable"
-        else failHTTP 404 "file not found"
+        else if optional then pure Nothing else failHTTP 404 "file not found"
 
 -- HTTP paths and Lanternfiles are UTF-8. Locale-dependent C-string conversion
 -- can silently discard non-ASCII characters, changing a validated path.

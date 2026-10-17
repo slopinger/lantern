@@ -289,3 +289,13 @@ changes. Keep new verification focused on shipped user-visible behavior.
   ACME omits contact entirely for empty email, while explicit email still sends
   mailto contact. Account contact updates are not implemented. Existing CA fixture
   verifies no-contact initial issuance, cached restart and explicit-contact renewal.
+
+- Precompressed static files: root PATH precompressed or quickstart --precompressed.
+  New Precompressed action resolves like Root and shares confined static delivery.
+  HTTP.Encoding ranks br/gzip/identity; missing field prefers identity. Sidecars
+  require an existing original and mtime >= original. Each selection uses its own
+  descriptor/stat validators, original MIME type and merged Vary: Accept-Encoding.
+  Encoded ranges stay disabled; identity retains ranges. No codecs at runtime.
+  withOptionalFileBelow suppresses only acquisition failures; callback errors never
+  trigger representation fallback. Existing static suite adds one focused feature
+  check. Quickstart state/root isolation includes precompressed roots.

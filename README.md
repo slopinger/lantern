@@ -66,6 +66,35 @@ responses committed during drain advertise `Connection: close`, and buffered
 following requests are not dispatched. Idle/header/handshake sockets close promptly on stop. Requests admitted before
 stop retain the grace period; late clients may observe EOF/reset instead of 503.
 
+## Precompressed static files
+
+Serve Brotli/gzip sidecars without runtime compression:
+
+```sh
+gzip -k ./public/app.js       # creates app.js.gz; keep the original
+brotli -k ./public/app.js     # optionally creates app.js.br
+lantern serve ./public --precompressed
+```
+
+In a Lanternfile, use `root ./public precompressed`, including inside a handler.
+The original file must exist. Lantern negotiates `.br` or `.gz` using the client's
+Accept-Encoding preferences; Brotli wins a tie, and identity is the fallback.
+Without Accept-Encoding, the original is preferred. Requests excluding every
+available representation receive 406. Malformed encoding preferences receive 400.
+
+Responses retain the original media type and add/merge `Vary: Accept-Encoding`.
+Each selected file has its own metadata validators; conditional GET and HEAD work
+normally. Encoded responses ignore Range and advertise `Accept-Ranges: none`;
+identity responses keep normal byte ranges. Configured Content-Encoding cannot
+be combined with this option.
+
+Publish originals and sidecars together with matching content. A sidecar older
+than the original is ignored, but timestamps do not prove content equivalence.
+Missing, forbidden or non-regular sidecars fall back to another acceptable file;
+all opens retain filesystem confinement. Files stream from bounded descriptor
+reads; no compression codecs, file-byte caches or new runtime tools are required.
+This covers precompressed files; dynamic response compression is not implemented.
+
 ## Access logs
 
 Enable structured request logs in a Lanternfile with `access_log on`, or use
@@ -292,7 +321,7 @@ no implicit proxies, redirects, pooled connections, or request retries. A global
 64 MiB reservation budget bounds concurrent request-body memory; excess body
 requests get 503. Known upstream responses over 1 GiB are rejected before headers.
 
-Not included: HTTP/2/3, WebSockets/CONNECT, compression, wildcard DNS hosts, DNS-01,
+Not included: HTTP/2/3, WebSockets/CONNECT, dynamic compression, wildcard DNS hosts, DNS-01,
 external-account binding, ACME revocation/account rotation, or regular-expression/method route
 matchers. This is not a complete Caddy replacement.
 

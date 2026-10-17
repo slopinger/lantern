@@ -27,6 +27,7 @@ import Lantern.Config
 import Lantern.Files
 import Lantern.HTTP
 import qualified Lantern.HTTP.Representation as R
+import Lantern.HTTP.Encoding (encodingPreferences)
 import qualified Lantern.TLS.Crypto as Crypto
 import Lantern.Transport
 import Lantern.Client (parseURL)
@@ -382,12 +383,40 @@ dispatch cfg roots cache site req body peer publicTarget isHead closeAfter headO
   case siteAction site of
     Respond text -> simple headOut send isHead closeAfter 200 extra text
     Redirect url -> simple headOut send isHead closeAfter 308 (("location",url):extra) "redirecting\n"
-    Root root -> do
+    Root root -> files False root
+    Precompressed root -> files True root
+    Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send
+    Routes{} -> failHTTP 500 "unresolved route"
+    StripPrefix{} -> failHTTP 500 "unresolved mount"
+  where
+    extra = siteHeaders site
+    files compressed root = do
       unless (reqMethod req `elem` ["GET","HEAD"]) $ failHTTP 405 "static files require GET or HEAD"
       relative <- either (const (failHTTP 400 "unsafe path")) pure (pathFromTarget (reqTarget req))
       let serve = do
-            result <- withFileBelow root relative $ \h status ->
-              serveStatic cache req relative extra h status isHead closeAfter headOut send
+            result <- withFileBelow root relative $ \h status -> do
+              let deliver fields file info = serveStatic cache req relative fields file info isHead closeAfter headOut send
+                  vary = case header "vary" extra of
+                    Nothing -> "Accept-Encoding"
+                    Just v | any (`elem` ["*","accept-encoding"]) (tokens v) -> v
+                           | otherwise -> v<>", Accept-Encoding"
+                  varied = ("vary",vary):filter ((/="vary") . fst) extra
+                  choose [] = simple headOut send isHead closeAfter 406 [("vary",vary)] "no acceptable encoding\n"
+                  choose (encoding:rest)
+                    | encoding == "identity" = deliver varied h status
+                    | otherwise = do
+                        let suffix=if encoding=="br" then ".br" else ".gz"
+                        selected <- withOptionalFileBelow root (relative++suffix) $ \file info ->
+                          if F.modificationTimeHiRes info < F.modificationTimeHiRes status then pure False else do
+                            deliver (("content-encoding",encoding):varied) file info
+                            pure True
+                        case selected of Just True -> pure (); _ -> choose rest
+              if compressed then do
+                let offered=if null (values "accept-encoding" (reqHeaders req))
+                              then ["identity","br","gzip"] else ["br","gzip","identity"]
+                preferences <- either (const (failHTTP 400 "invalid Accept-Encoding")) pure (encodingPreferences offered (reqHeaders req))
+                choose preferences
+              else deliver extra h status
             case result of
               Just () -> pure ()
               Nothing -> case directoryRedirect publicTarget of
@@ -397,11 +426,6 @@ dispatch cfg roots cache site req body peer publicTarget isHead closeAfter headO
                     ["location","content-type","content-encoding","content-language","content-location"]) extra) "redirecting\n"
       serve `catch` \(e :: IOException) ->
         if isDoesNotExistError e || isPermissionError e then failHTTP 404 "file not found" else throwIO e
-    Proxy upstream -> proxyRequest cfg roots upstream site req body peer isHead closeAfter headOut send
-    Routes{} -> failHTTP 500 "unresolved route"
-    StripPrefix{} -> failHTTP 500 "unresolved mount"
-  where
-    extra = siteHeaders site
 
 -- Metadata and body come from the same confined descriptor. Atomic publication
 -- keeps an open representation stable; an in-place truncation still poisons I/O.

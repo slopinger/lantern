@@ -365,3 +365,14 @@ Quickstart --domain therefore no longer requires email. Empty email omits the
 contact field rather than sending an empty mailto URI; an explicit email retains
 the existing request shape. The local CA fixture covers issuance without contact
 and a later renewal with contact. No new test matrix is added.
+
+Precompressed file delivery follows the sidecar use case in
+[Caddy file_server](https://caddyserver.com/docs/caddyfile/directives/file_server#precompressed),
+while [RFC 9110 section 12.5.3](https://www.rfc-editor.org/rfc/rfc9110.html#section-12.5.3)
+guides encoding preference/exclusion. The independent HTTP helper ranks supported
+encodings with integer quality weights and bounded lists. Static selection checks
+the original first, then confined sidecar descriptors; no codec executes per
+request. Identity remains a fallback unless explicitly excluded, with explicit
+identity weights respected. Encoded variants share existing conditional/HEAD
+handling and disabled encoded ranges. Sidecar mtime is only a deployment aid,
+not a proof of content equivalence; publishers must deploy matching content.
