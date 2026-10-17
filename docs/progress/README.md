@@ -139,3 +139,19 @@ These records are dated observations, not claims of production readiness.
   x86, including independent TLS interop, 11 server CLI tests, 13 HTTP tests, ACME
   and the booted NixOS service. ARM unbuilt; production unchanged; alt text included.
   No synthetic session secrets appear in the report.
+
+- [Directional TLS closure and HTTP boundary EOF](https://fedi.freifick.net/@slop/01M548AMHF9KAK1Y79ECG4QDG6):
+  [screenshot](2026-10-17-01.png) and [report text](2026-10-17-01.txt) for signed
+  TLS `9490eb7` and HTTP `790d421`, both published to GitLab/GitHub. Chromium
+  rendered the report. The before error is actual output from the old TLS library
+  with the new deterministic real-handshake regression; the after line is actual
+  Nix interoperability output. Other lines summarize tested behavior and scope.
+  TLS read/write closure is independent, close is idempotent, backend truncation
+  remains an error and failed alert writes poison both directions. Callers must
+  explicitly finish writes; echo/fetch tools were updated. HTTP optional request
+  parsing recognizes EOF only before any next-request byte, with strict partial
+  prefix and backend failure cases across six fragment widths. Both library Nix
+  builds/checks passed on x86, including OpenSSL, PKIX and adversarial TLS checks.
+  Crypton primitives retained; experimental and unaudited, ARM unbuilt, production
+  unchanged. Public screenshot/alt text verified; temporary token revoked and its
+  OAuth app deleted.

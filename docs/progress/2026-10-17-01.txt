@@ -1,0 +1,25 @@
+Lantern · independent protocol library audit
+TLS 9490eb7 · HTTP 790d421 · 2026-10-17
+
+Before: actual regression output against the old TLS library
+user error (local close discarded peer application data)
+
+After: actual closure test output
+TLS closure passed: directional data, idempotence, truncation, failed alert poisoning
+
+TLS close_notify now closes one direction at a time.
+Local write closure preserves incoming authenticated application data.
+Peer closure preserves the application's remaining writes.
+Repeated close sends no extra record; failed alert writes poison the context.
+Callers explicitly finish their write side and own transport deadlines/closure.
+
+HTTP readRequestMaybe distinguishes clean EOF between requests from truncation.
+Every proper nonempty prefix of a valid request fails across six fragment widths.
+Clean initial/pipelined boundaries and backend error propagation are tested.
+
+Both independent Nix builds/checks passed on x86.
+TLS OpenSSL/PKIX/adversarial interoperability also passed.
+Cryptographic primitives remain in Crypton.
+
+Experimental and unaudited. ARM unbuilt; no production service changed.
+This screenshot renders a test report, not a live service UI.
